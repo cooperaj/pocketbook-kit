@@ -8,6 +8,8 @@
 #   ./pb.sh shell              shell inside the build container (SDK env vars set)
 #   ./pb.sh clean [app-dir]    remove build/<app> (or all of build/)
 #
+# Uses podman if installed, otherwise docker; set PB_ENGINE=docker to force docker.
+#
 # app-dir defaults to apps/hello-pocketbook and must contain one .pro file,
 # e.g. ./pb.sh run Pocketbook-SDK-Examples/orientation
 #
@@ -26,8 +28,30 @@ SDK=/BUILD/$SDK_NAME
 
 die() { echo "error: $*" >&2; exit 1; }
 
+# Sets ENGINE (podman or docker; override with PB_ENGINE=...) and USER_ARGS, the
+# run options that make files written to the mounted repo belong to the host user
+select_engine() {
+    [[ -n "${ENGINE:-}" ]] && return
+    ENGINE=${PB_ENGINE:-}
+    if [[ -z $ENGINE ]]; then
+        if command -v podman >/dev/null; then ENGINE=podman
+        elif command -v docker >/dev/null; then ENGINE=docker
+        else die "neither podman nor docker found"; fi
+    fi
+    command -v "$ENGINE" >/dev/null || die "$ENGINE not found"
+    if [[ $ENGINE == podman ]]; then
+        USER_ARGS=(--userns=keep-id)
+    elif $ENGINE info -f '{{.SecurityOptions}}' 2>/dev/null | grep -q rootless; then
+        USER_ARGS=()    # rootless docker: container root already maps to the host user
+    else
+        USER_ARGS=(--user "$(id -u):$(id -g)" -e HOME=/tmp)
+    fi
+}
+
 ensure_image() {
-    podman image exists "$IMAGE" || podman build -t "$IMAGE" "$ROOT_DIR/container"
+    select_engine
+    $ENGINE image inspect "$IMAGE" >/dev/null 2>&1 ||
+        $ENGINE build -t "$IMAGE" -f "$ROOT_DIR/container/Containerfile" "$ROOT_DIR/container"
 }
 
 # in_container <workdir> <command...>
@@ -42,7 +66,7 @@ in_container() {
         fi
     fi
     ensure_image
-    podman run --rm "${tty[@]}" --userns=keep-id --security-opt label=disable \
+    $ENGINE run --rm "${tty[@]}" "${USER_ARGS[@]}" --security-opt label=disable \
         -v "$ROOT_DIR:/BUILD" -w "$workdir" "${x11[@]}" \
         -e PB_SDK_DIR=$SDK \
         -e PB_SDK_CFG=$SDK/config.cmake \
@@ -64,7 +88,7 @@ setup() {
         echo "$SDK_NAME already present"
         return
     fi
-    # Download, verify and extract inside the container so the host needs only git + podman
+    # Download, verify and extract inside the container so the host needs only git + podman/docker
     in_container /BUILD bash -ec "
         mkdir -p downloads
         f=downloads/$SDK_NAME.7z
@@ -113,10 +137,12 @@ build_arm() {
 case "${1:-}" in
     setup) setup ;;
     pc)    resolve_app "${2:-}"; build_pc ;;
-    run)   resolve_app "${2:-}"; build_pc; in_container "/BUILD/$BUILD_DIR/pc" ./$APP.app ;;
+    # LD_LIBRARY_PATH covers .pro files with a wrong rpath (e.g. the browser-minimal example)
+    run)   resolve_app "${2:-}"; build_pc
+           in_container "/BUILD/$BUILD_DIR/pc" env LD_LIBRARY_PATH=$SDK/usr/local/lib ./$APP.app ;;
     arm)   resolve_app "${2:-}"; build_arm ;;
     shell) in_container /BUILD bash ;;
     clean) if [[ -n "${2:-}" ]]; then resolve_app "$2"; rm -rf "${ROOT_DIR:?}/$BUILD_DIR"
            else rm -rf "${ROOT_DIR:?}/build"; fi ;;
-    *)     sed -n '2,15p' "$0"; exit 1 ;;
+    *)     sed -n '2,17p' "$0"; exit 1 ;;
 esac

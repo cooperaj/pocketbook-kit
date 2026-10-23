@@ -9,7 +9,8 @@ your firmware, go to Settings → Software → Version on the device.
 
 ## Requirements
 
-- Linux with `git` and `podman`
+- Linux with `git` and either `podman` or `docker`. podman is used if both are
+  installed; run with `PB_ENGINE=docker` to use docker instead.
 - An X11 or XWayland display, to run the emulator
 - About 5 GB of disk space: the SDK is a 640 MB download that unpacks to 3.3 GB
 
