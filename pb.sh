@@ -165,8 +165,21 @@ build_pc() {
         if [ -d /BUILD/device/system ]; then
             cp -r /BUILD/device/system/. system/
             ln -sf hwconfig_device system/config/hwconfig
-            sed -i 's/^emu_device=.*/emu_device=device/' system/config/global.cfg
-        fi"
+            # emu_resmode=-1: the device's own screen size, not a fixed emulator one
+            sed -i -e 's/^emu_device=.*/emu_device=device/' -e 's/^emu_resmode=.*/emu_resmode=-1/' \
+                system/config/global.cfg
+        fi
+        # Qt finds fonts through fontconfig, which doesn't know the emulator's
+        # system/fonts; on the device the firmware's fonts are set up for it
+        cat > system/fonts.conf <<FONTS
+<?xml version=\"1.0\"?>
+<!DOCTYPE fontconfig SYSTEM \"fonts.dtd\">
+<fontconfig>
+  <dir>/BUILD/$BUILD_DIR/pc/system/fonts</dir>
+  <include ignore_missing=\"yes\">/etc/fonts/fonts.conf</include>
+  <cachedir>/tmp/fontconfig</cachedir>
+</fontconfig>
+FONTS"
 }
 
 build_arm() {
@@ -182,7 +195,8 @@ case "${1:-}" in
     pc)    resolve_app "${2:-}"; build_pc ;;
     # LD_LIBRARY_PATH covers .pro files with a wrong rpath (e.g. the browser-minimal example)
     run)   resolve_app "${2:-}"; build_pc
-           in_container "/BUILD/$BUILD_DIR/pc" env LD_LIBRARY_PATH=$SDK/usr/local/lib ./$APP.app ;;
+           in_container "/BUILD/$BUILD_DIR/pc" env LD_LIBRARY_PATH=$SDK/usr/local/lib \
+               FONTCONFIG_FILE=/BUILD/$BUILD_DIR/pc/system/fonts.conf ./$APP.app ;;
     arm)   resolve_app "${2:-}"; build_arm ;;
     shell) in_container /BUILD bash ;;
     clean) if [[ -n "${2:-}" ]]; then resolve_app "$2"; rm -rf "${ROOT_DIR:?}/build/$APP"

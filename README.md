@@ -88,7 +88,8 @@ your device. To copy those from your device:
 2. Connect USB and copy the `pb-device` folder from the root of the device's storage into this
    repo as `device/`.
 3. Build and run any app with `./pb.sh run`. Every PC build copies `device/system` (the
-   device's hardware config, themes and fonts) over the emulator's, and selects that device.
+   device's hardware config, themes and fonts) over the emulator's and selects that device,
+   so the emulator has the device's screen size, dpi, status bar, icons and fonts.
 4. Optional: `./pb.sh run apps/device-export` on the PC saves every icon in the device's theme
    to `device/icons/`, as PNGs and labelled contact sheets, for picking icon names. It takes a
    few seconds and closes by itself.
