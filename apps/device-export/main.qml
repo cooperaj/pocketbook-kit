@@ -14,7 +14,7 @@ Window {
 
         Text {
             width: parent.width
-            text: "Theme icon export"
+            text: "Device export"
             font.pointSize: 12
             font.bold: true
             horizontalAlignment: Text.AlignHCenter

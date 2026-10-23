@@ -73,6 +73,7 @@ in_container() {
         -e FRSCSDK_DIR=$SDK/usr \
         -e PB_SYSROOT=$SDK/usr/arm-obreey-linux-gnueabi/sysroot \
         -e PB_SYSTEM_PATH=/BUILD/PocketBook-SDK/system \
+        -e PB_DEVICE_DIR=/BUILD/device \
         "$IMAGE" "$@"
 }
 
@@ -123,7 +124,14 @@ build_pc() {
         make -j\$(nproc)
         # The emulator reads (and writes) config, fonts and themes in ./system;
         # use a copy so the PocketBook-SDK submodule stays clean
-        [ -d system ] || cp -r \$PB_SYSTEM_PATH system"
+        [ -d system ] || cp -r \$PB_SYSTEM_PATH system
+        # Files exported from a real device by apps/device-export (hardware config,
+        # theme, fonts) make the emulator look like that device
+        if [ -d /BUILD/device/system ]; then
+            cp -r /BUILD/device/system/. system/
+            ln -sf hwconfig_device system/config/hwconfig
+            sed -i 's/^emu_device=.*/emu_device=device/' system/config/global.cfg
+        fi"
 }
 
 build_arm() {

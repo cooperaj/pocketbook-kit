@@ -1,14 +1,23 @@
-// One-off tool: lists the icons in the device's system themes and saves the active
-// theme's icons as PNGs and contact sheets, so they can be looked at on a PC.
+// Makes the PC emulator match a real PocketBook, in two steps:
 //
-// Output goes to bookorbit-icons/ at the root of the device's USB storage
-// (build/theme-icons/pc/system/mnt/ext1/bookorbit-icons in the emulator):
-//   themes.txt    every theme file found, with the icons it lists
-//   icons.txt     every icon the active theme returns: name, size, depth (bit 15 set:
-//                 has a transparency mask; 24 and 32: colour, byte order guessed)
-//   png/          each of those icons as <name>.png
-//   sheet-NN.png  the icons on labelled contact sheets
+// 1. On the device, copies what the emulator needs to pb-device/ at the root of the USB
+//    storage, laid out like the emulator's system folder. Copy pb-device/ into the repo as
+//    device/; pb.sh then uses it for every PC build.
+//      system/config/hwconfig_device   hardware config (screen size, dpi, scale)
+//      system/config/device.cfg        model name
+//      system/themes/                  the system themes
+//      system/fonts/                   the system fonts
+//
+// 2. On the PC (./pb.sh run apps/device-export), with device/ in place, saves the device
+//    theme's icons for reference to device/icons/, then quits. This runs on the PC because
+//    saving ~1,600 icons on the device is slow and stalls.
+//      themes.txt    every theme file found, with the icons it lists
+//     icons.txt     every icon the active theme returns: name, size, depth (bit 15 set:
+//                   has a transparency mask; 24 and 32: colour, byte order guessed)
+//     png/          each of those icons as <name>.png
+//     sheet-NN.png  the icons on labelled contact sheets
 
+#include <hwconfig.h>
 #include <inkview.h>
 #include <QDir>
 #include <QFile>
@@ -24,7 +33,9 @@
 #include <QTimer>
 #include <cstdlib>
 
-static const QString OUT_DIR = QString::fromUtf8(FLASHDIR "/bookorbit-icons");
+static const QString EXPORT_DIR = QString::fromUtf8(FLASHDIR "/pb-device");
+// Where the icons go: device/icons in the repo (pb.sh passes its path)
+static const QString OUT_DIR = QString::fromUtf8(qgetenv("PB_DEVICE_DIR")) + "/icons";
 
 // Shown on screen while the tool runs
 class Status : public QObject
@@ -152,8 +163,46 @@ static void writeSheets(const QStringList &names, Status &status)
     }
 }
 
-static void run(Status &status)
+// Copies a file, replacing any earlier copy. Returns a line for the summary.
+static QString copyFile(const QString &from, const QString &to)
 {
+    QDir().mkpath(QFileInfo(to).path());
+    QFile::remove(to);
+    if (!QFile::copy(from, to))
+        return "  could not copy " + from + "\n";
+    return QString("  %1 (%2 KB)\n").arg(from).arg(QFileInfo(to).size() / 1024);
+}
+
+// Copies every file in a folder (not subfolders)
+static QString copyFolder(const QString &from, const QString &to)
+{
+    const QFileInfoList files = QDir(from).entryInfoList(QDir::Files, QDir::Name);
+    if (files.isEmpty())
+        return "  nothing in " + from + "\n";
+    qint64 bytes = 0;
+    for (const QFileInfo &file : files) {
+        copyFile(file.filePath(), to + "/" + file.fileName());
+        bytes += file.size();
+    }
+    return QString("  %1: %2 files (%3 KB)\n").arg(from).arg(files.size()).arg(bytes / 1024);
+}
+
+// The files that make the PC emulator match this device
+[[maybe_unused]] static QString exportEmulatorFiles(Status &status)
+{
+    status.set("Copying files for the emulator…");
+    const QString system = EXPORT_DIR + "/system";
+    QString summary = "Copied for the emulator:\n";
+    summary += copyFile(QString::fromUtf8(HWCONFIG_PATH), system + "/config/hwconfig_device");
+    summary += copyFile(QString::fromUtf8(SYSTEMDATA "/config/device.cfg"), system + "/config/device.cfg");
+    summary += copyFolder(QString::fromUtf8(SYSTEMTHEMESPATH), system + "/themes");
+    summary += copyFolder(QString::fromUtf8(SYSTEMDATA "/fonts"), system + "/fonts");
+    return summary;
+}
+
+[[maybe_unused]] static void exportIcons(Status &status)
+{
+    QDir(OUT_DIR).removeRecursively();
     QDir().mkpath(OUT_DIR + "/png");
 
     // 1. Theme files and the names in their indexes
@@ -221,8 +270,28 @@ static void run(Status &status)
 
     // 3. Contact sheets
     writeSheets(found, status);
-    status.set(QString("Done: %1 icons (of %2 names) saved to\n%3\n\nConnect USB to copy the folder.")
-                   .arg(found.size()).arg(allNames.size()).arg(OUT_DIR));
+    status.set(QString("Done: %1 icons (of %2 names) saved to device/icons").arg(found.size()).arg(allNames.size()));
+}
+
+static void run(Status &status)
+{
+#ifdef EMULATOR
+    if (!QDir(QString::fromUtf8(qgetenv("PB_DEVICE_DIR")) + "/system").exists()) {
+        status.set("No device/ folder in the repo yet. Run this on the device first, then copy "
+                   "pb-device/ from its USB storage into the repo as device/.");
+        fprintf(stderr, "%s\n", qPrintable(status.text()));
+        QTimer::singleShot(1500, qApp, &QCoreApplication::quit);
+        return;
+    }
+    // pb.sh has put the device's theme in place, so GetResource() reads the device's icons
+    exportIcons(status);
+    fprintf(stderr, "%s\n", qPrintable(status.text()));
+    QTimer::singleShot(1500, qApp, &QCoreApplication::quit);
+#else
+    status.set(exportEmulatorFiles(status)
+               + "\nDone. Connect USB and copy " + EXPORT_DIR + " into the repo as device/, "
+               "then run ./pb.sh run apps/device-export on the PC to export the icons.");
+#endif
 }
 
 int main(int argc, char *argv[])

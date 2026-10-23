@@ -6,3 +6,6 @@
 .cache/
 /build/
 *.pro.user
+
+# Files exported from a PocketBook by apps/device-export (PocketBook's own, not ours to commit)
+/device/

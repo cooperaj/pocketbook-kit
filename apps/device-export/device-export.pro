@@ -1,4 +1,4 @@
-TARGET = theme-icons.app
+TARGET = device-export.app
 QT += quick
 CONFIG += c++17 qtquickcompiler
 

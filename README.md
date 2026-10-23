@@ -75,6 +75,24 @@ compiled into the binaries stay valid.
 3. Add C++ files to `SOURCES`/`HEADERS` in the `.pro` file, and QML files to `qml.qrc`.
 4. Run `./pb.sh run apps/my-app`.
 
+## Making the emulator match your device
+
+The emulator uses the SDK's own theme, fonts and screen size, so it doesn't look exactly like
+your device. To copy those from your device:
+
+1. Build `./pb.sh arm apps/device-export`, copy `build/device-export/arm/device-export.app`
+   to the device's `applications/` folder and run it there.
+2. Connect USB and copy the `pb-device` folder from the root of the device's storage into this
+   repo as `device/`.
+3. Build and run any app with `./pb.sh run`. Every PC build copies `device/system` (the
+   device's hardware config, themes and fonts) over the emulator's, and selects that device.
+4. Optional: `./pb.sh run apps/device-export` on the PC saves every icon in the device's theme
+   to `device/icons/`, as PNGs and labelled contact sheets, for picking icon names. It takes a
+   few seconds and closes by itself.
+
+`device/` holds PocketBook's own files, so it is in `.gitignore`. To go back to the SDK's
+emulator, delete `device/` and run `./pb.sh clean <app>`.
+
 ## Installing on the device
 
 Copy the `.app` file from `build/<app>/arm/` into the `applications/` folder on the
