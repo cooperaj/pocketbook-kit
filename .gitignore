@@ -3,5 +3,6 @@
 /SDK-B288-6.10.tmp/
 /downloads/
 
+.cache/
 /build/
 *.pro.user
