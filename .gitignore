@@ -1,7 +1,8 @@
 # Downloaded by ./pb.sh setup
-/SDK-B288-6.10/
-/SDK-B288-6.10.tmp/
+/SDK-*/
 /downloads/
+# SDK chosen with ./pb.sh use
+/.pb-sdk
 
 .cache/
 /build/

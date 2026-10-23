@@ -3,16 +3,19 @@
 Build Qt6/QML apps for PocketBook e-readers, and run them on your Linux PC in an
 emulator window, using the official PocketBook SDK.
 
-Targets the **B288** platform with firmware **6.10**. That covers Touch Lux 5, Verse,
-Verse Pro, Touch HD 3, Color, Era, InkPad 3/3 Pro/Color/4/Lite and InkPad X. To check
-your firmware, go to Settings → Software → Version on the device.
+Targets firmware **6.10**, with the **B288** SDK by default. That covers Touch Lux 5, Verse,
+Verse Pro, Touch HD 3, Color, Era, InkPad 3/3 Pro/Color/4/Lite and InkPad X. The **B300** SDK
+can be selected instead; see [Choosing the SDK](#choosing-the-sdk). The SDK's readme lists it
+only for the InkPad Color 2, but the Era Color (PB700K3) is a B300 device too. B288 builds run
+on B300 devices, but the B300 SDK matches their firmware's libraries.
+To check your firmware, go to Settings → Software → Version on the device.
 
 ## Requirements
 
 - Linux with `git` and either `podman` or `docker`. podman is used if both are
   installed; run with `PB_ENGINE=docker` to use docker instead.
 - An X11 or XWayland display, to run the emulator
-- About 5 GB of disk space: the SDK is a 640 MB download that unpacks to 3.3 GB
+- About 5 GB of disk space per SDK: each is a 600 MB download that unpacks to about 3.3 GB
 
 Nothing else needs to be installed on the host. The compilers and libraries run in a
 container.
@@ -24,7 +27,7 @@ git clone --recurse-submodules <this repo> PocketBook
 cd PocketBook
 ./pb.sh setup     # one-off: submodules, container image, SDK download (verified by SHA-256)
 ./pb.sh run       # build apps/hello-pocketbook and open it in the emulator
-./pb.sh arm       # cross-compile it -> build/hello-pocketbook/arm/hello-pocketbook.app
+./pb.sh arm       # cross-compile it -> build/hello-pocketbook/B288-6.10/arm/hello-pocketbook.app
 ```
 
 Run `./pb.sh` with no arguments to list all commands. Any folder containing a single `.pro`
@@ -46,14 +49,14 @@ file can be passed as the app, including the official examples:
 | `apps/bookorbit/` | Client for a [BookOrbit](https://github.com/bookorbit/bookorbit) server (see its README) |
 | `PocketBook-SDK/` | Submodule: official docs and Docker files, plus the `system/` folder (fonts, themes, config) the emulator needs |
 | `Pocketbook-SDK-Examples/` | Submodule pinned to the `6.10` branch: example apps |
-| `SDK-B288-6.10/` | Toolchain, Qt6 and PocketBook libraries. Downloaded by `setup` from the [PocketBook-SDK releases](https://github.com/Sean-on-Git/PocketBook-SDK/releases/tag/6.10). Not committed. |
-| `build/` | Build output. Not committed. |
+| `SDK-<sdk>/` | Toolchain, Qt6 and PocketBook libraries, e.g. `SDK-B288-6.10/`. Downloaded by `setup` from the [PocketBook-SDK releases](https://github.com/Sean-on-Git/PocketBook-SDK/releases/tag/6.10). Not committed. |
+| `build/` | Build output, in `build/<app>/<sdk>/{pc,arm}`. Not committed. |
 | `downloads/` | The SDK archive. Safe to delete after `setup`. |
 
 ## Why a container?
 
 The SDK's prebuilt tools (qmake, the desktop Qt6 and `libinkview`) only work from the path
-`/BUILD/SDK-B288-6.10`. They are also linked against Debian 12 libraries. `pb.sh` mounts this
+`/BUILD/SDK-<sdk>`, e.g. `/BUILD/SDK-B288-6.10`. They are also linked against Debian 12 libraries. `pb.sh` mounts this
 repo at `/BUILD` inside a Debian 12 container. That works on any distro, and the paths
 compiled into the binaries stay valid.
 
@@ -80,7 +83,7 @@ compiled into the binaries stay valid.
 The emulator uses the SDK's own theme, fonts and screen size, so it doesn't look exactly like
 your device. To copy those from your device:
 
-1. Build `./pb.sh arm apps/device-export`, copy `build/device-export/arm/device-export.app`
+1. Build `./pb.sh arm apps/device-export`, copy `build/device-export/<sdk>/arm/device-export.app`
    to the device's `applications/` folder and run it there.
 2. Connect USB and copy the `pb-device` folder from the root of the device's storage into this
    repo as `device/`.
@@ -95,7 +98,7 @@ emulator, delete `device/` and run `./pb.sh clean <app>`.
 
 ## Installing on the device
 
-Copy the `.app` file from `build/<app>/arm/` into the `applications/` folder on the
+Copy the `.app` file from `build/<app>/<sdk>/arm/` into the `applications/` folder on the
 device. It then shows up in the apps list.
 
 The official SDK readme also says to copy a `qt6.conf` file into `applications/`. That file
@@ -107,5 +110,16 @@ isn't in the examples repo. If an app won't start on the device, check that firs
 git pull && git submodule update --init
 ```
 
-To use a different SDK release, change `SDK_NAME`, `SDK_URL` and `SDK_SHA256` at the top of
-`pb.sh`. The SHA-256 is shown on the GitHub release page.
+## Choosing the SDK
+
+```sh
+./pb.sh sdks              # list the SDKs, which are downloaded, and which is selected (*)
+./pb.sh use B300-6.10     # select one for later commands (saved in .pb-sdk)
+./pb.sh setup             # download the selected SDK if needed
+PB_SDK=B288-6.10 ./pb.sh arm apps/bookorbit   # or pick one for a single command
+```
+
+Each SDK is unpacked into its own `SDK-<sdk>/` folder, and builds go into
+`build/<app>/<sdk>/`, so builds from different SDKs don't overwrite each other. To add another
+SDK release, add its name, release tag and SHA-256 (shown on the GitHub release page) to the
+tables at the top of `pb.sh`.
