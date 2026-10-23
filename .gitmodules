@@ -1,0 +1,7 @@
+[submodule "PocketBook-SDK"]
+	path = PocketBook-SDK
+	url = https://github.com/Sean-on-Git/PocketBook-SDK.git
+[submodule "Pocketbook-SDK-Examples"]
+	path = Pocketbook-SDK-Examples
+	url = https://github.com/Sean-on-Git/Pocketbook-SDK-Examples.git
+	branch = 6.10

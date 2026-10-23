@@ -1,0 +1,7 @@
+# Downloaded by ./pb.sh setup
+/SDK-B288-6.10/
+/SDK-B288-6.10.tmp/
+/downloads/
+
+/build/
+*.pro.user
