@@ -43,6 +43,7 @@ file can be passed as the app, including the official examples:
 | `pb.sh` | The only script you need. It runs every build inside the container. |
 | `container/Containerfile` | Debian 12 (Bookworm) image with what the SDK needs to run |
 | `apps/hello-pocketbook/` | Skeleton app: copy this folder to start your own |
+| `apps/bookorbit/` | Client for a [BookOrbit](https://github.com/bookorbit/bookorbit) server (see its README) |
 | `PocketBook-SDK/` | Submodule: official docs and Docker files, plus the `system/` folder (fonts, themes, config) the emulator needs |
 | `Pocketbook-SDK-Examples/` | Submodule pinned to the `6.10` branch: example apps |
 | `SDK-B288-6.10/` | Toolchain, Qt6 and PocketBook libraries. Downloaded by `setup` from the [PocketBook-SDK releases](https://github.com/Sean-on-Git/PocketBook-SDK/releases/tag/6.10). Not committed. |
