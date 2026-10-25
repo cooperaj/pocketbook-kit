@@ -46,7 +46,7 @@ file can be passed as the app, including the official examples:
 | `pb.sh` | The only script you need. It runs every build inside the container. |
 | `container/Containerfile` | Debian 12 (Bookworm) image with what the SDK needs to run |
 | `apps/hello-pocketbook/` | Skeleton app: copy this folder to start your own |
-| `apps/bookorbit/` | Client for a [BookOrbit](https://github.com/bookorbit/bookorbit) server (see its README) |
+| `apps/pbookorbit/` | PBookOrbit, a client for a [BookOrbit](https://github.com/bookorbit/bookorbit) server (see its README) |
 | `PocketBook-SDK/` | Submodule: official docs and Docker files, plus the `system/` folder (fonts, themes, config) the emulator needs |
 | `Pocketbook-SDK-Examples/` | Submodule pinned to the `6.10` branch: example apps |
 | `SDK-<sdk>/` | Toolchain, Qt6 and PocketBook libraries, e.g. `SDK-B288-6.10/`. Downloaded by `setup` from the [PocketBook-SDK releases](https://github.com/Sean-on-Git/PocketBook-SDK/releases/tag/6.10). Not committed. |
@@ -117,7 +117,7 @@ git pull && git submodule update --init
 ./pb.sh sdks              # list the SDKs, which are downloaded, and which is selected (*)
 ./pb.sh use B300-6.10     # select one for later commands (saved in .pb-sdk)
 ./pb.sh setup             # download the selected SDK if needed
-PB_SDK=B288-6.10 ./pb.sh arm apps/bookorbit   # or pick one for a single command
+PB_SDK=B288-6.10 ./pb.sh arm apps/pbookorbit  # or pick one for a single command
 ```
 
 Each SDK is unpacked into its own `SDK-<sdk>/` folder, and builds go into
