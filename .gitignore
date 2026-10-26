@@ -1,7 +1,3 @@
 .cache/
 /build/
 *.pro.user
-
-# The user's Era Color screenshots, for matching the system UI while the app is built
-# (see apps/pbookorbit/TODO.md)
-/scr*.bmp
