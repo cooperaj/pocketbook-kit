@@ -70,8 +70,12 @@ select_engine() {
 
 ensure_image() {
     select_engine
-    $ENGINE image inspect "$IMAGE" >/dev/null 2>&1 ||
-        $ENGINE build -t "$IMAGE" -f "$ROOT_DIR/container/Containerfile" "$ROOT_DIR/container"
+    # Labelled with the Containerfile's hash, so a changed Containerfile rebuilds it
+    local hash
+    hash=$(sha256sum "$ROOT_DIR/container/Containerfile" | cut -c1-16)
+    [[ $($ENGINE image inspect -f '{{index .Config.Labels "pb.containerfile"}}' "$IMAGE" 2>/dev/null) == "$hash" ]] ||
+        $ENGINE build --label "pb.containerfile=$hash" -t "$IMAGE" \
+            -f "$ROOT_DIR/container/Containerfile" "$ROOT_DIR/container"
 }
 
 # in_container <workdir> <command...>
