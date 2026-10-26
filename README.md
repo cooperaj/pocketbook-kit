@@ -25,7 +25,7 @@ container.
 Clone the kit anywhere and put `pb.sh` on your PATH as `pb`:
 
 ```sh
-git clone --recurse-submodules https://github.com/<you>/pocketbook-kit.git
+git clone --recurse-submodules https://github.com/cooperaj/pocketbook-kit.git
 ln -s "$PWD/pocketbook-kit/pb.sh" ~/.local/bin/pb
 pb setup     # one-off: container image and SDK download (verified by SHA-256)
 ```
@@ -57,7 +57,7 @@ Instead of using the `pb` on your PATH, an app can pin a version of the kit as a
 in `kit/`. The Makefile from `pb new` uses `kit/pb.sh` when there is one:
 
 ```sh
-git submodule add https://github.com/<you>/pocketbook-kit.git kit
+git submodule add https://github.com/cooperaj/pocketbook-kit.git kit
 git submodule update --init --recursive
 make setup run
 ```
