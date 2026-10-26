@@ -5,8 +5,14 @@
 //    device/; pb.sh then uses it for every PC build.
 //      system/config/hwconfig_device   hardware config (screen size, dpi, scale)
 //      system/config/device.cfg        model name
+//      system/config/extensions.cfg    the apps that open each file type: the user's
+//                                      (where KOReader adds itself), then the firmware's,
+//                                      as one file, since the emulator reads only one
+//      system/language/<lang>.txt      the firmware's language file, which names those
+//                                      apps, with the user's additions after it
 //      system/themes/                  the system themes
 //      system/fonts/                   the system fonts
+//    and, for reference, the separate files they were made from in originals/.
 //
 // 2. On the PC (./pb.sh run apps/device-export), with device/ in place, saves the device
 //    theme's icons for reference to device/icons/, then quits. This runs on the PC because
@@ -187,6 +193,32 @@ static QString copyFolder(const QString &from, const QString &to)
     return QString("  %1: %2 files (%3 KB)\n").arg(from).arg(files.size()).arg(bytes / 1024);
 }
 
+// Joins files into one, in order, skipping the first lines of those that say to. Each
+// source is also copied as it is to originals/. Returns lines for the summary.
+static QString joinFiles(const QList<QPair<QString, int>> &sources, const QString &to)
+{
+    QDir().mkpath(QFileInfo(to).path());
+    QFile out(to);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return "  could not write " + to + "\n";
+    QString summary;
+    for (const auto &[from, skipLines] : sources) {
+        QFile in(from);
+        if (!in.open(QIODevice::ReadOnly)) {
+            summary += "  no " + from + "\n";
+            continue;
+        }
+        QByteArray data = in.readAll();
+        summary += copyFile(from, EXPORT_DIR + "/originals" + from);
+        for (int i = 0; i < skipLines && data.contains('\n'); i++)
+            data = data.mid(data.indexOf('\n') + 1);
+        if (!data.isEmpty() && !data.endsWith('\n'))
+            data += '\n';
+        out.write(data);
+    }
+    return summary;
+}
+
 // The files that make the PC emulator match this device
 [[maybe_unused]] static QString exportEmulatorFiles(Status &status)
 {
@@ -195,6 +227,15 @@ static QString copyFolder(const QString &from, const QString &to)
     QString summary = "Copied for the emulator:\n";
     summary += copyFile(QString::fromUtf8(HWCONFIG_PATH), system + "/config/hwconfig_device");
     summary += copyFile(QString::fromUtf8(SYSTEMDATA "/config/device.cfg"), system + "/config/device.cfg");
+    summary += joinFiles({{QString::fromUtf8(CONFIGPATH "/extensions.cfg"), 0},
+                          {QString::fromUtf8(SYSTEMDATA "/config/extensions.cfg"), 0}},
+                         system + "/config/extensions.cfg");
+    // The user's language file starts with the language's name, which the firmware's
+    // has already
+    const QString lang = QString::fromUtf8(currentLang()) + ".txt";
+    summary += joinFiles({{QString::fromUtf8(SYSTEMLANGPATH "/") + lang, 0},
+                          {QString::fromUtf8(USERLANGPATH "/") + lang, 1}},
+                         system + "/language/" + lang);
     summary += copyFolder(QString::fromUtf8(SYSTEMTHEMESPATH), system + "/themes");
     summary += copyFolder(QString::fromUtf8(SYSTEMDATA "/fonts"), system + "/fonts");
     return summary;
