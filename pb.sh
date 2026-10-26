@@ -10,6 +10,9 @@
 #   ./pb.sh sdks               list the SDKs, which are downloaded and which is selected
 #   ./pb.sh use   <sdk>        select an SDK for later commands, e.g. ./pb.sh use B300-6.10
 #
+# PB_QMAKE_ARGS adds arguments to qmake, e.g. for a build with an app's build-time
+# setting: PB_QMAKE_ARGS="SUGGESTED_SERVER=books.example.com" ./pb.sh arm apps/pbookorbit
+#
 # The SDK is B288-6.10 unless ./pb.sh use picked another; PB_SDK=<sdk> overrides it
 # for one command. Uses podman if installed, otherwise docker; set PB_ENGINE=docker to
 # force docker.
@@ -159,7 +162,7 @@ build_pc() {
     require_sdk
     mkdir -p "$ROOT_DIR/$BUILD_DIR/pc"
     in_container "/BUILD/$BUILD_DIR/pc" bash -ec "
-        $SDK/usr/local/qt6/bin/qmake PLATFORM=linux /BUILD/$APP_DIR/$APP.pro
+        $SDK/usr/local/qt6/bin/qmake PLATFORM=linux ${PB_QMAKE_ARGS:-} /BUILD/$APP_DIR/$APP.pro
         make -j\$(nproc)
         # The emulator reads (and writes) config, fonts and themes in ./system;
         # use a copy so the PocketBook-SDK submodule stays clean
@@ -190,7 +193,7 @@ build_arm() {
     require_sdk
     mkdir -p "$ROOT_DIR/$BUILD_DIR/arm"
     in_container "/BUILD/$BUILD_DIR/arm" bash -ec "
-        $SDK/usr/arm-obreey-linux-gnueabi/sysroot/usr/local/qt6/bin/qmake PLATFORM=arm /BUILD/$APP_DIR/$APP.pro
+        $SDK/usr/arm-obreey-linux-gnueabi/sysroot/usr/local/qt6/bin/qmake PLATFORM=arm ${PB_QMAKE_ARGS:-} /BUILD/$APP_DIR/$APP.pro
         make -j\$(nproc)"
 }
 
@@ -207,5 +210,5 @@ case "${1:-}" in
            else rm -rf "${ROOT_DIR:?}/build"; fi ;;
     sdks)  list_sdks ;;
     use)   use_sdk "${2:-}" ;;
-    *)     sed -n '2,21p' "$0"; exit 1 ;;
+    *)     sed -n '2,24p' "$0"; exit 1 ;;
 esac
