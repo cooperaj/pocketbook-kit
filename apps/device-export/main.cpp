@@ -1,8 +1,8 @@
 // Makes the PC emulator match a real PocketBook, in two steps:
 //
 // 1. On the device, copies what the emulator needs to pb-device/ at the root of the USB
-//    storage, laid out like the emulator's system folder. Copy pb-device/ into the repo as
-//    device/; pb.sh then uses it for every PC build.
+//    storage, laid out like the emulator's system folder. pb device import copies it to
+//    the kit's device/ folder, which every PC build then uses.
 //      system/config/hwconfig_device   hardware config (screen size, dpi, scale)
 //      system/config/device.cfg        model name
 //      system/config/extensions.cfg    the apps that open each file type: the user's
@@ -14,7 +14,7 @@
 //      system/fonts/                   the system fonts
 //    and, for reference, the separate files they were made from in originals/.
 //
-// 2. On the PC (./pb.sh run apps/device-export), with device/ in place, saves the device
+// 2. On the PC (pb device import runs it), with device/ in place, saves the device
 //    theme's icons for reference to device/icons/, then quits. This runs on the PC because
 //    saving ~1,600 icons on the device is slow and stalls.
 //      themes.txt    every theme file found, with the icons it lists
@@ -40,7 +40,7 @@
 #include <cstdlib>
 
 static const QString EXPORT_DIR = QString::fromUtf8(FLASHDIR "/pb-device");
-// Where the icons go: device/icons in the repo (pb.sh passes its path)
+// Where the icons go: device/icons (pb.sh passes the device folder's path)
 static const QString OUT_DIR = QString::fromUtf8(qgetenv("PB_DEVICE_DIR")) + "/icons";
 
 // Shown on screen while the tool runs
@@ -318,8 +318,7 @@ static void run(Status &status)
 {
 #ifdef EMULATOR
     if (!QDir(QString::fromUtf8(qgetenv("PB_DEVICE_DIR")) + "/system").exists()) {
-        status.set("No device/ folder in the repo yet. Run this on the device first, then copy "
-                   "pb-device/ from its USB storage into the repo as device/.");
+        status.set("No device files yet. Run this on the device first, then pb device import.");
         fprintf(stderr, "%s\n", qPrintable(status.text()));
         QTimer::singleShot(1500, qApp, &QCoreApplication::quit);
         return;
@@ -330,8 +329,7 @@ static void run(Status &status)
     QTimer::singleShot(1500, qApp, &QCoreApplication::quit);
 #else
     status.set(exportEmulatorFiles(status)
-               + "\nDone. Connect USB and copy " + EXPORT_DIR + " into the repo as device/, "
-               "then run ./pb.sh run apps/device-export on the PC to export the icons.");
+               + "\nDone. Connect USB and run pb device import on the PC.");
 #endif
 }
 

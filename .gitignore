@@ -1,15 +1,6 @@
-# Downloaded by ./pb.sh setup
-/SDK-*/
-/downloads/
-# SDK chosen with ./pb.sh use
-/.pb-sdk
-
 .cache/
 /build/
 *.pro.user
-
-# Files exported from a PocketBook by apps/device-export (PocketBook's own, not ours to commit)
-/device/
 
 # The user's Era Color screenshots, for matching the system UI while the app is built
 # (see apps/pbookorbit/TODO.md)

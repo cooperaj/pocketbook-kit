@@ -1,4 +1,5 @@
-# Minimal Debian Bookworm build/run environment for the PocketBook SDK-B288-6.10.
+# Minimal Debian Bookworm build/run environment for the PocketBook 6.10 SDKs.
+# xvfb, xdotool and imagemagick are for pb test: a virtual display, input and screenshots.
 # The SDK's prebuilt host tools (qmake, moc, x86 Qt, libinkview) are linked
 # against Bookworm libraries, so they must run inside this image.
 FROM docker.io/library/debian:bookworm
@@ -16,9 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libnss3 libnspr4 libopus0 libasound2 libevent-2.1-7 libharfbuzz-subset0 \
         libpci3 libsnappy1v5 libwebpdemux2 libwebpmux3 \
         fonts-liberation \
+        xvfb xdotool imagemagick \
     && rm -rf /var/lib/apt/lists/* \
     && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-15 100 \
-    && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-15 100
+    && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-15 100 \
+    && mkdir -m 1777 /tmp/.X11-unix
 
 ENV LANG=C.UTF-8
 

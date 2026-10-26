@@ -1,27 +1,38 @@
 #!/usr/bin/env bash
 # Build/run helper for PocketBook Qt apps (firmware 6.10, B288 or B300 SDK).
 #
-#   ./pb.sh setup              fetch submodules, download the selected SDK, build the container image
-#   ./pb.sh run   [app-dir]    build for PC and open it in the emulator window
-#   ./pb.sh pc    [app-dir]    build for PC            -> build/<app>/<sdk>/pc/<app>.app
-#   ./pb.sh arm   [app-dir]    cross-compile for device -> build/<app>/<sdk>/arm/<app>.app
-#   ./pb.sh shell              shell inside the build container (SDK env vars set)
-#   ./pb.sh clean [app-dir]    remove build/<app> (or all of build/)
-#   ./pb.sh sdks               list the SDKs, which are downloaded and which is selected
-#   ./pb.sh use   <sdk>        select an SDK for later commands, e.g. ./pb.sh use B300-6.10
+#   pb setup                 download the selected SDK and build the container image
+#   pb new   <dir>           start a new app in <dir>, from the hello-pocketbook skeleton
+#   pb run   [app-dir]       build for PC and open it in the emulator window
+#   pb pc    [app-dir]       build for PC             -> build/<app>/<sdk>/pc/<app>.app
+#   pb arm   [app-dir]       cross-compile for device -> build/<app>/<sdk>/arm/<app>.app
+#   pb test  <app-dir> <script> [args]
+#                            build for PC, then run a bash script beside the emulator on a
+#                            virtual display (Xvfb): the script starts "$PB_APP" itself and
+#                            can drive it with xdotool and take screenshots with import;
+#                            the script's folder is /test, for saving them
+#   pb shell [app-dir]       shell inside the build container (SDK env vars set)
+#   pb clean [app-dir]       remove build/<app>
+#   pb sdks                  list the SDKs, which are downloaded and which is selected
+#   pb use   <sdk>           select an SDK for later commands, e.g. pb use B300-6.10
+#   pb device                make the emulator look like your PocketBook (see the README):
+#   pb device export [mount]   build the export tool, copy it to the device if mounted
+#   pb device import <mount>   take in what it exported and save the theme's icons
+#   pb device remove           go back to the SDK's own emulator
+#
+# app-dir is any folder containing one .pro file, and defaults to the current folder.
+# Builds go to build/ in the current folder; PB_BUILD_DIR=<dir> puts them elsewhere.
 #
 # PB_QMAKE_ARGS adds arguments to qmake, e.g. for a build with an app's build-time
-# setting: PB_QMAKE_ARGS="SUGGESTED_SERVER=books.example.com" ./pb.sh arm apps/pbookorbit
+# setting: PB_QMAKE_ARGS="SUGGESTED_SERVER=books.example.com" pb arm
 #
-# The SDK is B288-6.10 unless ./pb.sh use picked another; PB_SDK=<sdk> overrides it
-# for one command. Uses podman if installed, otherwise docker; set PB_ENGINE=docker to
-# force docker.
-#
-# app-dir defaults to apps/hello-pocketbook and must contain one .pro file,
-# e.g. ./pb.sh run Pocketbook-SDK-Examples/orientation
+# SDKs, the selected SDK and the device files are kept in PB_HOME, by default
+# ~/.local/share/pocketbook-kit, and shared by every app. The SDK is B288-6.10 unless
+# pb use picked another; PB_SDK=<sdk> overrides it for one command. Uses podman if
+# installed, otherwise docker; set PB_ENGINE=docker to force docker.
 #
 # The SDK's tools are hardcoded to /BUILD/SDK-<sdk> and need Debian Bookworm
-# libraries, so everything runs in a container with this repo mounted at /BUILD.
+# libraries, so everything runs in a container with the SDK mounted there.
 set -euo pipefail
 
 # SDKs from https://github.com/Sean-on-Git/PocketBook-SDK/releases: release tag and
@@ -35,12 +46,15 @@ declare -A SDK_SHA256=(
 )
 DEFAULT_SDK=B288-6.10
 IMAGE=pocketbook-sdk:6.10
-DEFAULT_APP=apps/hello-pocketbook
 
-ROOT_DIR=$(cd "$(dirname "$0")" && pwd)
-SDK_CHOICE_FILE=$ROOT_DIR/.pb-sdk
+# The kit: the folder this script is in, also when it's run through a symlink on PATH
+KIT_DIR=$(dirname "$(realpath "$0")")
+PB_HOME=${PB_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/pocketbook-kit}
+SDK_CHOICE_FILE=$PB_HOME/sdk
+DEVICE_DIR=$PB_HOME/device
+BUILD_ROOT=$(realpath -m "${PB_BUILD_DIR:-$PWD/build}")
 
-# The selected SDK: PB_SDK, else the one saved by ./pb.sh use, else the default
+# The selected SDK: PB_SDK, else the one saved by pb use, else the default
 PB_SDK=${PB_SDK:-$(cat "$SDK_CHOICE_FILE" 2>/dev/null || echo $DEFAULT_SDK)}
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -51,8 +65,12 @@ SDK_NAME=SDK-$PB_SDK
 SDK_URL=https://github.com/Sean-on-Git/PocketBook-SDK/releases/download/${SDK_RELEASE[$PB_SDK]}/$SDK_NAME.7z
 SDK=/BUILD/$SDK_NAME
 
+# Container paths: the kit at /kit, the SDK at /BUILD/SDK-<sdk>, the device files at
+# /device, and for app commands the app at /src and its build folder at /out
+MOUNTS=()
+
 # Sets ENGINE (podman or docker; override with PB_ENGINE=...) and USER_ARGS, the
-# run options that make files written to the mounted repo belong to the host user
+# run options that make files written to the mounted folders belong to the host user
 select_engine() {
     [[ -n "${ENGINE:-}" ]] && return
     ENGINE=${PB_ENGINE:-}
@@ -75,102 +93,127 @@ ensure_image() {
     select_engine
     # Labelled with the Containerfile's hash, so a changed Containerfile rebuilds it
     local hash
-    hash=$(sha256sum "$ROOT_DIR/container/Containerfile" | cut -c1-16)
+    hash=$(sha256sum "$KIT_DIR/container/Containerfile" | cut -c1-16)
     [[ $($ENGINE image inspect -f '{{index .Config.Labels "pb.containerfile"}}' "$IMAGE" 2>/dev/null) == "$hash" ]] ||
         $ENGINE build --label "pb.containerfile=$hash" -t "$IMAGE" \
-            -f "$ROOT_DIR/container/Containerfile" "$ROOT_DIR/container"
+            -f "$KIT_DIR/container/Containerfile" "$KIT_DIR/container"
 }
 
-# in_container <workdir> <command...>
+# in_container <workdir> <command...>, on the host's display if it has one. With
+# HEADLESS=1 the command gets a virtual display of its own instead.
 in_container() {
     local workdir=$1; shift
     local tty=(-i); [[ -t 0 && -t 1 ]] && tty=(-it)
     local x11=()
-    if [[ -n "${DISPLAY:-}" ]]; then
+    if [[ -n "${HEADLESS:-}" ]]; then
+        set -- bash -c 'Xvfb :99 -screen 0 2560x1600x24 -nolisten tcp 2>/dev/null &
+            export DISPLAY=:99
+            for _ in $(seq 50); do [ -e /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
+            exec "$@"' headless "$@"
+    elif [[ -n "${DISPLAY:-}" ]]; then
         x11=(-e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix:ro)
         if [[ -n "${XAUTHORITY:-}" && -f "$XAUTHORITY" ]]; then
             x11+=(-e XAUTHORITY=/tmp/.Xauthority -v "$XAUTHORITY:/tmp/.Xauthority:ro")
         fi
     fi
     ensure_image
+    mkdir -p "$DEVICE_DIR"
+    local sdk_mount=()
+    [[ -d "$PB_HOME/$SDK_NAME" ]] && sdk_mount=(-v "$PB_HOME/$SDK_NAME:$SDK")
     $ENGINE run --rm "${tty[@]}" "${USER_ARGS[@]}" --security-opt label=disable \
-        -v "$ROOT_DIR:/BUILD" -w "$workdir" "${x11[@]}" \
+        -v "$KIT_DIR:/kit" -v "$DEVICE_DIR:/device" "${sdk_mount[@]}" "${MOUNTS[@]}" \
+        -w "$workdir" "${x11[@]}" \
+        -e PB_KIT=/kit \
         -e PB_SDK_DIR=$SDK \
         -e PB_SDK_CFG=$SDK/config.cmake \
         -e FRSCSDK_DIR=$SDK/usr \
         -e PB_SYSROOT=$SDK/usr/arm-obreey-linux-gnueabi/sysroot \
-        -e PB_SYSTEM_PATH=/BUILD/PocketBook-SDK/system \
-        -e PB_DEVICE_DIR=/BUILD/device \
+        -e PB_SYSTEM_PATH=/kit/PocketBook-SDK/system \
+        -e PB_DEVICE_DIR=/device \
         "$IMAGE" "$@"
 }
 
 require_sdk() {
-    [[ -d "$ROOT_DIR/$SDK_NAME/usr" && -d "$ROOT_DIR/PocketBook-SDK/system" ]] ||
-        die "$SDK_NAME not set up; run ./pb.sh setup first"
+    [[ -d "$PB_HOME/$SDK_NAME/usr" ]] || die "$SDK_NAME not set up; run pb setup first"
+    [[ -d "$KIT_DIR/PocketBook-SDK/system" ]] ||
+        die "the kit's submodules are missing; run git submodule update --init in $KIT_DIR"
 }
 
 setup() {
-    git -C "$ROOT_DIR" submodule update --init
+    [[ -d "$KIT_DIR/PocketBook-SDK/system" ]] || git -C "$KIT_DIR" submodule update --init
     ensure_image
-    if [[ -d "$ROOT_DIR/$SDK_NAME/usr" ]]; then
-        echo "$SDK_NAME already present"
-        return
+    mkdir -p "$PB_HOME"
+    if [[ -d "$PB_HOME/$SDK_NAME/usr" ]]; then
+        echo "$SDK_NAME already present in $PB_HOME"
+    else
+        # Download, verify and extract inside the container so the host needs only git + podman/docker
+        MOUNTS=(-v "$PB_HOME:/data")
+        in_container /data bash -ec "
+            mkdir -p downloads
+            f=downloads/$SDK_NAME.7z
+            if ! echo '${SDK_SHA256[$PB_SDK]}  '\$f | sha256sum -c --status 2>/dev/null; then
+                curl -fL --retry 3 -o \$f.part $SDK_URL
+                mv \$f.part \$f
+            fi
+            echo '${SDK_SHA256[$PB_SDK]}  '\$f | sha256sum -c
+            rm -rf $SDK_NAME.tmp && mkdir $SDK_NAME.tmp
+            bsdtar -xf \$f -C $SDK_NAME.tmp
+            mv $SDK_NAME.tmp/$SDK_NAME $SDK_NAME && rmdir $SDK_NAME.tmp"
+        echo "SDK ready in $PB_HOME/$SDK_NAME (you can delete $PB_HOME/downloads to save about 600 MB)"
     fi
-    # Download, verify and extract inside the container so the host needs only git + podman/docker
-    in_container /BUILD bash -ec "
-        mkdir -p downloads
-        f=downloads/$SDK_NAME.7z
-        if ! echo '${SDK_SHA256[$PB_SDK]}  '\$f | sha256sum -c --status 2>/dev/null; then
-            curl -fL --retry 3 -o \$f.part $SDK_URL
-            mv \$f.part \$f
-        fi
-        echo '${SDK_SHA256[$PB_SDK]}  '\$f | sha256sum -c
-        rm -rf $SDK_NAME.tmp && mkdir $SDK_NAME.tmp
-        bsdtar -xf \$f -C $SDK_NAME.tmp
-        mv $SDK_NAME.tmp/$SDK_NAME $SDK_NAME && rmdir $SDK_NAME.tmp"
-    echo "SDK ready in $SDK_NAME/ (you can delete downloads/ to save about 600 MB)"
+    if [[ ! -d "$DEVICE_DIR/system" ]]; then
+        cat <<EOF
+
+Next, to make the emulator look like your PocketBook (screen size, theme, fonts):
+connect it over USB and run
+    pb device export <where its storage is mounted>
+then follow what it says. See "Making the emulator match your device" in the README.
+EOF
+    fi
 }
 
 list_sdks() {
     local sdk
     for sdk in $(printf '%s\n' "${!SDK_RELEASE[@]}" | sort); do
         printf '%s %-10s %s\n' "$([[ $sdk == "$PB_SDK" ]] && echo '*' || echo ' ')" "$sdk" \
-            "$([[ -d "$ROOT_DIR/SDK-$sdk/usr" ]] && echo downloaded || echo 'not downloaded')"
+            "$([[ -d "$PB_HOME/SDK-$sdk/usr" ]] && echo downloaded || echo 'not downloaded')"
     done
 }
 
 use_sdk() {
     local sdk=${1:-}
-    [[ -n $sdk && -n "${SDK_RELEASE[$sdk]:-}" ]] || die "usage: ./pb.sh use <sdk>; known: ${!SDK_RELEASE[*]}"
+    [[ -n $sdk && -n "${SDK_RELEASE[$sdk]:-}" ]] || die "usage: pb use <sdk>; known: ${!SDK_RELEASE[*]}"
+    mkdir -p "$PB_HOME"
     echo "$sdk" > "$SDK_CHOICE_FILE"
-    echo "Using $sdk$([[ -d "$ROOT_DIR/SDK-$sdk/usr" ]] || echo '; run ./pb.sh setup to download it')"
+    echo "Using $sdk$([[ -d "$PB_HOME/SDK-$sdk/usr" ]] || echo '; run pb setup to download it')"
 }
 
-# Sets APP_DIR (relative to repo root), APP (target name) and BUILD_DIR
+# Sets APP_DIR (absolute), APP (target name) and OUT_DIR (build/<app>/<sdk>), and
+# mounts them at /src and /out
 resolve_app() {
-    local dir=${1:-$DEFAULT_APP}
-    dir=$(realpath --relative-to="$ROOT_DIR" "$dir")
-    [[ $dir != ..* ]] || die "app dir must be inside $ROOT_DIR"
-    local pros=("$ROOT_DIR/$dir"/*.pro)
+    local dir
+    dir=$(realpath "${1:-.}") || die "no folder ${1:-.}"
+    local pros=("$dir"/*.pro)
     [[ ${#pros[@]} -eq 1 && -f ${pros[0]} ]] || die "$dir must contain exactly one .pro file"
     APP_DIR=$dir
     APP=$(basename "${pros[0]}" .pro)
-    BUILD_DIR=build/$APP/$PB_SDK
+    OUT_DIR=$BUILD_ROOT/$APP/$PB_SDK
+    MOUNTS=(-v "$APP_DIR:/src" -v "$OUT_DIR:/out")
 }
 
 build_pc() {
     require_sdk
-    mkdir -p "$ROOT_DIR/$BUILD_DIR/pc"
-    in_container "/BUILD/$BUILD_DIR/pc" bash -ec "
-        $SDK/usr/local/qt6/bin/qmake PLATFORM=linux ${PB_QMAKE_ARGS:-} /BUILD/$APP_DIR/$APP.pro
+    mkdir -p "$OUT_DIR/pc"
+    in_container /out/pc bash -ec "
+        $SDK/usr/local/qt6/bin/qmake PLATFORM=linux ${PB_QMAKE_ARGS:-} /src/$APP.pro
         make -j\$(nproc)
         # The emulator reads (and writes) config, fonts and themes in ./system;
         # use a copy so the PocketBook-SDK submodule stays clean
         [ -d system ] || cp -r \$PB_SYSTEM_PATH system
-        # Files exported from a real device by apps/device-export (hardware config,
-        # theme, fonts) make the emulator look like that device
-        if [ -d /BUILD/device/system ]; then
-            cp -r /BUILD/device/system/. system/
+        # Files exported from a real device by pb device (hardware config, theme, fonts)
+        # make the emulator look like that device
+        if [ -d /device/system ]; then
+            cp -r /device/system/. system/
             ln -sf hwconfig_device system/config/hwconfig
             # emu_resmode=-1: the device's own screen size, not a fixed emulator one
             sed -i -e 's/^emu_device=.*/emu_device=device/' -e 's/^emu_resmode=.*/emu_resmode=-1/' \
@@ -182,7 +225,7 @@ build_pc() {
 <?xml version=\"1.0\"?>
 <!DOCTYPE fontconfig SYSTEM \"fonts.dtd\">
 <fontconfig>
-  <dir>/BUILD/$BUILD_DIR/pc/system/fonts</dir>
+  <dir>/out/pc/system/fonts</dir>
   <include ignore_missing=\"yes\">/etc/fonts/fonts.conf</include>
   <cachedir>/tmp/fontconfig</cachedir>
 </fontconfig>
@@ -191,24 +234,120 @@ FONTS"
 
 build_arm() {
     require_sdk
-    mkdir -p "$ROOT_DIR/$BUILD_DIR/arm"
-    in_container "/BUILD/$BUILD_DIR/arm" bash -ec "
-        $SDK/usr/arm-obreey-linux-gnueabi/sysroot/usr/local/qt6/bin/qmake PLATFORM=arm ${PB_QMAKE_ARGS:-} /BUILD/$APP_DIR/$APP.pro
+    mkdir -p "$OUT_DIR/arm"
+    in_container /out/arm bash -ec "
+        $SDK/usr/arm-obreey-linux-gnueabi/sysroot/usr/local/qt6/bin/qmake PLATFORM=arm ${PB_QMAKE_ARGS:-} /src/$APP.pro
         make -j\$(nproc)"
 }
 
+# The environment the PC build runs in. LD_LIBRARY_PATH covers .pro files with a wrong
+# rpath (e.g. the browser-minimal example).
+APP_ENV=(env LD_LIBRARY_PATH=$SDK/usr/local/lib FONTCONFIG_FILE=/out/pc/system/fonts.conf)
+
+run_pc() {
+    in_container /out/pc "${APP_ENV[@]}" "./$APP.app"
+}
+
+# test_pc <script> [args...]: runs the script in /out/pc with $PB_APP set
+test_pc() {
+    local script
+    script=$(realpath "${1:-}") && [[ -f $script ]] || die "usage: pb test <app-dir> <script> [args]"
+    shift
+    MOUNTS+=(-v "$(dirname "$script"):/test")
+    HEADLESS=1 in_container /out/pc "${APP_ENV[@]}" PB_APP="./$APP.app" \
+        bash "/test/$(basename "$script")" "$@"
+}
+
+new_app() {
+    local dir=${1:-}
+    [[ -n $dir ]] || die "usage: pb new <dir>"
+    [[ ! -e $dir ]] || die "$dir already exists"
+    local name
+    name=$(basename "$dir")
+    [[ $name =~ ^[a-zA-Z][a-zA-Z0-9_-]*$ ]] || die "the app's name ($name) may only have letters, digits, - and _"
+    local skeleton=$KIT_DIR/apps/hello-pocketbook
+    mkdir -p "$dir"
+    cp "$skeleton"/{main.cpp,main.qml,qml.qrc} "$dir/"
+    sed "s/^TARGET = .*/TARGET = $name.app/" "$skeleton/hello-pocketbook.pro" > "$dir/$name.pro"
+    cp "$KIT_DIR/template/Makefile" "$dir/Makefile"
+    cp "$KIT_DIR/template/gitignore" "$dir/.gitignore"
+    echo "Created $dir. To try it:"
+    echo "    cd $dir && make run"
+}
+
+device() {
+    case "${1:-}" in
+        export) device_export "${2:-}" ;;
+        import) device_import "${2:-}" ;;
+        remove) rm -rf "$DEVICE_DIR"
+                echo "Removed $DEVICE_DIR. Run pb clean <app> so its next PC build starts from the SDK's emulator files." ;;
+        "")     if [[ -f $DEVICE_DIR/system/config/device.cfg ]]; then
+                    echo "The emulator uses the files from a $(sed -n 's/^description=//p' "$DEVICE_DIR/system/config/device.cfg")"
+                    echo "($DEVICE_DIR)"
+                else
+                    echo "No device files yet; the emulator uses the SDK's. To add them: pb device export"
+                fi ;;
+        *)      die "usage: pb device [export [mount] | import <mount> | remove]" ;;
+    esac
+}
+
+# The kit's own tools build into PB_HOME, not into the current folder
+device_tool() {
+    BUILD_ROOT=$PB_HOME/build
+    resolve_app "$KIT_DIR/apps/device-export"
+}
+
+device_export() {
+    local mount=$1
+    device_tool
+    build_arm
+    local app=$OUT_DIR/arm/device-export.app
+    if [[ -n $mount ]]; then
+        [[ -d $mount/applications ]] || die "$mount doesn't look like a PocketBook's storage (no applications/ folder)"
+        cp "$app" "$mount/applications/"
+        echo "Copied device-export.app to $mount/applications/."
+    else
+        echo "Built $app. Copy it to the applications/ folder on the device."
+    fi
+    cat <<EOF
+
+On the device, open Applications and run device-export. When it says Done, connect USB
+again and run
+    pb device import ${mount:-<where its storage is mounted>}
+EOF
+}
+
+device_import() {
+    local from=${1:-}
+    [[ -n $from ]] || die "usage: pb device import <mount>, or the pb-device folder itself"
+    [[ -d $from/pb-device ]] && from=$from/pb-device
+    [[ -d $from/system/config ]] || die "no pb-device folder with system/config in $1; run device-export on the device first"
+    [[ $(realpath "$from") != "$(realpath -m "$DEVICE_DIR")" ]] || die "$from is already the kit's device folder"
+    rm -rf "$DEVICE_DIR"
+    mkdir -p "$DEVICE_DIR"
+    cp -r "$from"/. "$DEVICE_DIR/"
+    echo "Copied $from to $DEVICE_DIR"
+    # On the PC, device-export saves every icon in the device's theme, for picking names
+    device_tool
+    build_pc
+    echo "Saving the theme's icons to $DEVICE_DIR/icons..."
+    HEADLESS=1 in_container /out/pc "${APP_ENV[@]}" ./device-export.app
+    echo "Done. Every PC build now copies these files into the emulator's system/ folder;"
+    echo "run pb clean <app> first if an app was built before."
+}
+
 case "${1:-}" in
-    setup) setup ;;
-    pc)    resolve_app "${2:-}"; build_pc ;;
-    # LD_LIBRARY_PATH covers .pro files with a wrong rpath (e.g. the browser-minimal example)
-    run)   resolve_app "${2:-}"; build_pc
-           in_container "/BUILD/$BUILD_DIR/pc" env LD_LIBRARY_PATH=$SDK/usr/local/lib \
-               FONTCONFIG_FILE=/BUILD/$BUILD_DIR/pc/system/fonts.conf ./$APP.app ;;
-    arm)   resolve_app "${2:-}"; build_arm ;;
-    shell) in_container /BUILD bash ;;
-    clean) if [[ -n "${2:-}" ]]; then resolve_app "$2"; rm -rf "${ROOT_DIR:?}/build/$APP"
-           else rm -rf "${ROOT_DIR:?}/build"; fi ;;
-    sdks)  list_sdks ;;
-    use)   use_sdk "${2:-}" ;;
-    *)     sed -n '2,24p' "$0"; exit 1 ;;
+    setup)  setup ;;
+    new)    new_app "${2:-}" ;;
+    pc)     resolve_app "${2:-}"; build_pc ;;
+    run)    resolve_app "${2:-}"; build_pc; run_pc ;;
+    arm)    resolve_app "${2:-}"; build_arm ;;
+    test)   resolve_app "${2:-}"; build_pc; test_pc "${@:3}" ;;
+    shell)  if [[ -n "${2:-}" ]]; then resolve_app "$2"; mkdir -p "$OUT_DIR"; in_container /src bash
+            else in_container /kit bash; fi ;;
+    clean)  resolve_app "${2:-}"; rm -rf "${BUILD_ROOT:?}/${APP:?}" ;;
+    sdks)   list_sdks ;;
+    use)    use_sdk "${2:-}" ;;
+    device) device "${@:2}" ;;
+    *)      sed -n '2,35p' "$0"; exit 1 ;;
 esac
