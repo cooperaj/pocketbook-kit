@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build/run helper for PocketBook Qt apps (firmware 6.10, B288 or B300 SDK).
+# Build/run helper for PocketBook Qt apps (firmware 6.10 with the B288 or B300 SDK, or
+# 6.11 with the RK3566 SDK).
 #
 #   pb setup                 download the selected SDK and build the container image
 #   pb new   <dir>           start a new app in <dir>, from the hello-pocketbook skeleton
@@ -31,21 +32,36 @@
 # pb use picked another; PB_SDK=<sdk> overrides it for one command. Uses podman if
 # installed, otherwise docker; set PB_ENGINE=docker to force docker.
 #
-# The SDK's tools are hardcoded to /BUILD/SDK-<sdk> and need Debian Bookworm
-# libraries, so everything runs in a container with the SDK mounted there.
+# The SDK's tools are hardcoded to a folder in /BUILD (/BUILD/SDK-<sdk> for 6.10) and need
+# the libraries of one Debian release (Bookworm for 6.10, Trixie for 6.11), so everything
+# runs in a container of that release with the SDK mounted there.
 set -euo pipefail
 
 # SDKs from https://github.com/Sean-on-Git/PocketBook-SDK/releases: release tag and
 # SHA-256 of the archive (shown on the release page). B288 covers most devices from
 # Touch Lux 5 to InkPad X. B300 is listed for the InkPad Color 2, but the Era Color
-# (PB700K3) is also a B300 device: its hwconfig reports PLATFORM_B300.
-declare -A SDK_RELEASE=([B288-6.10]=6.10 [B300-6.10]=6.10)
+# (PB700K3) is also a B300 device: its hwconfig reports PLATFORM_B300. RK3566 is for the
+# 1030, the only device with firmware 6.11 so far.
+declare -A SDK_RELEASE=([B288-6.10]=6.10 [B300-6.10]=6.10 [RK3566-6.11]=6.11)
 declare -A SDK_SHA256=(
     [B288-6.10]=18405fb276535d53a4b70d2bbf4033313cded58da5002d563ccf7e1838440c0b
     [B300-6.10]=a201544dd7baa9aeef4d1afa420c2120bf250ff1da5c8dfdc47cd247ccb143b5
+    [RK3566-6.11]=a92deed99dc3a09df48970467626b19467661795615ecd9307b3aac1382b4307
+)
+# How each SDK is laid out: the folder at the top of its archive, which is also where in
+# /BUILD its tools expect to be; where in that folder its usr tree is (local/ with the
+# desktop Qt and libinkview, and the toolchain); and the toolchain's name, for its sysroot.
+# The 6.11 SDK is a Buildroot SDK, with no usr/ folder of its own.
+declare -A SDK_TOP=(
+    [B288-6.10]=SDK-B288-6.10 [B300-6.10]=SDK-B300-6.10
+    [RK3566-6.11]=arm-buildroot-linux-gnueabihf_sdk-buildroot
+)
+declare -A SDK_USR=([B288-6.10]=/usr [B300-6.10]=/usr [RK3566-6.11]=)
+declare -A SDK_TRIPLET=(
+    [B288-6.10]=arm-obreey-linux-gnueabi [B300-6.10]=arm-obreey-linux-gnueabi
+    [RK3566-6.11]=arm-buildroot-linux-gnueabihf
 )
 DEFAULT_SDK=B288-6.10
-IMAGE=pocketbook-sdk:6.10
 
 # The kit: the folder this script is in, also when it's run through a symlink on PATH
 KIT_DIR=$(dirname "$(realpath "$0")")
@@ -63,7 +79,14 @@ die() { echo "error: $*" >&2; exit 1; }
     die "unknown SDK '$PB_SDK'; known: ${!SDK_RELEASE[*]}"
 SDK_NAME=SDK-$PB_SDK
 SDK_URL=https://github.com/Sean-on-Git/PocketBook-SDK/releases/download/${SDK_RELEASE[$PB_SDK]}/$SDK_NAME.7z
-SDK=/BUILD/$SDK_NAME
+# In the container: the SDK, its usr tree and its sysroot. On the host the SDK is in
+# $PB_HOME/$SDK_NAME, whatever its archive called it.
+SDK=/BUILD/${SDK_TOP[$PB_SDK]}
+SDK_USR_DIR=$SDK${SDK_USR[$PB_SDK]}
+SYSROOT=$SDK_USR_DIR/${SDK_TRIPLET[$PB_SDK]}/sysroot
+# One image per Debian release the SDKs need, built from container/Containerfile.<release>
+CONTAINERFILE=$KIT_DIR/container/Containerfile.${SDK_RELEASE[$PB_SDK]}
+IMAGE=pocketbook-sdk:${SDK_RELEASE[$PB_SDK]}
 
 # Container paths: the kit at /kit, the SDK at /BUILD/SDK-<sdk>, the device files at
 # /device, and for app commands the app at /src and its build folder at /out
@@ -93,10 +116,10 @@ ensure_image() {
     select_engine
     # Labelled with the Containerfile's hash, so a changed Containerfile rebuilds it
     local hash
-    hash=$(sha256sum "$KIT_DIR/container/Containerfile" | cut -c1-16)
+    hash=$(sha256sum "$CONTAINERFILE" | cut -c1-16)
     [[ $($ENGINE image inspect -f '{{index .Config.Labels "pb.containerfile"}}' "$IMAGE" 2>/dev/null) == "$hash" ]] ||
         $ENGINE build --label "pb.containerfile=$hash" -t "$IMAGE" \
-            -f "$KIT_DIR/container/Containerfile" "$KIT_DIR/container"
+            -f "$CONTAINERFILE" "$KIT_DIR/container"
 }
 
 # in_container <workdir> <command...>, on the host's display if it has one. With
@@ -125,16 +148,17 @@ in_container() {
         -w "$workdir" "${x11[@]}" \
         -e PB_KIT=/kit \
         -e PB_SDK_DIR=$SDK \
+        -e PB_SDK_USR=$SDK_USR_DIR \
         -e PB_SDK_CFG=$SDK/config.cmake \
-        -e FRSCSDK_DIR=$SDK/usr \
-        -e PB_SYSROOT=$SDK/usr/arm-obreey-linux-gnueabi/sysroot \
+        -e FRSCSDK_DIR=$SDK_USR_DIR \
+        -e PB_SYSROOT=$SYSROOT \
         -e PB_SYSTEM_PATH=/kit/PocketBook-SDK/system \
         -e PB_DEVICE_DIR=/device \
         "$IMAGE" "$@"
 }
 
 require_sdk() {
-    [[ -d "$PB_HOME/$SDK_NAME/usr" ]] || die "$SDK_NAME not set up; run pb setup first"
+    [[ -d "$PB_HOME/$SDK_NAME${SDK_USR[$PB_SDK]}/local" ]] || die "$SDK_NAME not set up; run pb setup first"
     [[ -d "$KIT_DIR/PocketBook-SDK/system" ]] ||
         die "the kit's submodules are missing; run git submodule update --init in $KIT_DIR"
 }
@@ -143,7 +167,7 @@ setup() {
     [[ -d "$KIT_DIR/PocketBook-SDK/system" ]] || git -C "$KIT_DIR" submodule update --init
     ensure_image
     mkdir -p "$PB_HOME"
-    if [[ -d "$PB_HOME/$SDK_NAME/usr" ]]; then
+    if [[ -d "$PB_HOME/$SDK_NAME${SDK_USR[$PB_SDK]}/local" ]]; then
         echo "$SDK_NAME already present in $PB_HOME"
     else
         # Download, verify and extract inside the container so the host needs only git + podman/docker
@@ -158,7 +182,7 @@ setup() {
             echo '${SDK_SHA256[$PB_SDK]}  '\$f | sha256sum -c
             rm -rf $SDK_NAME.tmp && mkdir $SDK_NAME.tmp
             bsdtar -xf \$f -C $SDK_NAME.tmp
-            mv $SDK_NAME.tmp/$SDK_NAME $SDK_NAME && rmdir $SDK_NAME.tmp"
+            mv $SDK_NAME.tmp/${SDK_TOP[$PB_SDK]} $SDK_NAME && rmdir $SDK_NAME.tmp"
         echo "SDK ready in $PB_HOME/$SDK_NAME (you can delete $PB_HOME/downloads to save about 600 MB)"
     fi
     if [[ ! -d "$DEVICE_DIR/system" ]]; then
@@ -175,8 +199,8 @@ EOF
 list_sdks() {
     local sdk
     for sdk in $(printf '%s\n' "${!SDK_RELEASE[@]}" | sort); do
-        printf '%s %-10s %s\n' "$([[ $sdk == "$PB_SDK" ]] && echo '*' || echo ' ')" "$sdk" \
-            "$([[ -d "$PB_HOME/SDK-$sdk/usr" ]] && echo downloaded || echo 'not downloaded')"
+        printf '%s %-12s %s\n' "$([[ $sdk == "$PB_SDK" ]] && echo '*' || echo ' ')" "$sdk" \
+            "$([[ -d "$PB_HOME/SDK-$sdk${SDK_USR[$sdk]}/local" ]] && echo downloaded || echo 'not downloaded')"
     done
 }
 
@@ -185,7 +209,7 @@ use_sdk() {
     [[ -n $sdk && -n "${SDK_RELEASE[$sdk]:-}" ]] || die "usage: pb use <sdk>; known: ${!SDK_RELEASE[*]}"
     mkdir -p "$PB_HOME"
     echo "$sdk" > "$SDK_CHOICE_FILE"
-    echo "Using $sdk$([[ -d "$PB_HOME/SDK-$sdk/usr" ]] || echo '; run pb setup to download it')"
+    echo "Using $sdk$([[ -d "$PB_HOME/SDK-$sdk${SDK_USR[$sdk]}/local" ]] || echo '; run pb setup to download it')"
 }
 
 # Sets APP_DIR (absolute), APP (target name) and OUT_DIR (build/<app>/<sdk>), and
@@ -205,7 +229,7 @@ build_pc() {
     require_sdk
     mkdir -p "$OUT_DIR/pc"
     in_container /out/pc bash -ec "
-        $SDK/usr/local/qt6/bin/qmake PLATFORM=linux ${PB_QMAKE_ARGS:-} /src/$APP.pro
+        $SDK_USR_DIR/local/qt6/bin/qmake PLATFORM=linux ${PB_QMAKE_ARGS:-} /src/$APP.pro
         make -j\$(nproc)
         # The emulator reads (and writes) config, fonts and themes in ./system;
         # use a copy so the PocketBook-SDK submodule stays clean
@@ -236,13 +260,16 @@ build_arm() {
     require_sdk
     mkdir -p "$OUT_DIR/arm"
     in_container /out/arm bash -ec "
-        $SDK/usr/arm-obreey-linux-gnueabi/sysroot/usr/local/qt6/bin/qmake PLATFORM=arm ${PB_QMAKE_ARGS:-} /src/$APP.pro
+        $SYSROOT/usr/local/qt6/bin/qmake PLATFORM=arm ${PB_QMAKE_ARGS:-} /src/$APP.pro
         make -j\$(nproc)"
 }
 
 # The environment the PC build runs in. LD_LIBRARY_PATH covers .pro files with a wrong
-# rpath (e.g. the browser-minimal example).
-APP_ENV=(env LD_LIBRARY_PATH=$SDK/usr/local/lib FONTCONFIG_FILE=/out/pc/system/fonts.conf)
+# rpath (e.g. the browser-minimal example). The 6.11 desktop Qt is built with OpenGL ES,
+# which the emulator's platform plugin can't give it, so Qt Quick would draw nothing:
+# QT_QUICK_BACKEND=software draws as the 6.10 one does, which has no OpenGL.
+APP_ENV=(env LD_LIBRARY_PATH=$SDK_USR_DIR/local/lib FONTCONFIG_FILE=/out/pc/system/fonts.conf
+    QT_QUICK_BACKEND=software)
 
 run_pc() {
     in_container /out/pc "${APP_ENV[@]}" "./$APP.app"

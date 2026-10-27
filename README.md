@@ -8,6 +8,9 @@ Verse Pro, Touch HD 3, Color, Era, InkPad 3/3 Pro/Color/4/Lite and InkPad X. The
 can be selected instead; see [Choosing the SDK](#choosing-the-sdk). The SDK's readme lists it
 only for the InkPad Color 2, but the Era Color (PB700K3) is a B300 device too. B288 builds run
 on B300 devices, but the B300 SDK matches their firmware's libraries.
+
+Firmware **6.11** is supported with the **RK3566** SDK, for the 1030, the only device with
+6.11 so far. Its builds target that device's processor and won't run on 6.10 devices.
 To check your firmware, go to Settings → Software → Version on the device.
 
 ## Requirements
@@ -15,7 +18,7 @@ To check your firmware, go to Settings → Software → Version on the device.
 - Linux with `git` and either `podman` or `docker`. podman is used if both are
   installed; run with `PB_ENGINE=docker` to use docker instead.
 - An X11 or XWayland display, to run the emulator
-- About 4 GB of disk space per SDK: each is a 600 MB download that unpacks to about 3.3 GB
+- About 4 GB of disk space per SDK: each is a 600-800 MB download that unpacks to 3.3-4 GB
 
 Nothing else needs to be installed on the host. The compilers and libraries run in a
 container.
@@ -71,7 +74,7 @@ working on the kit and an app together.
 |---|---|
 | `pb.sh` | The only script you need. It runs every build inside the container. |
 | `qmake/pocketbook.pri` | The qmake settings every app needs, for both the emulator and the device |
-| `container/Containerfile` | Debian 12 (Bookworm) image with what the SDK needs to run |
+| `container/Containerfile.<release>` | The image each SDK release runs in: Debian 12 (Bookworm) for 6.10, Debian 13 (Trixie) for 6.11 |
 | `apps/hello-pocketbook/` | The skeleton app that `pb new` copies |
 | `apps/device-export/` | Copies a device's screen config, theme and fonts for the emulator; see below |
 | `template/` | The Makefile and `.gitignore` that `pb new` adds |
@@ -82,7 +85,7 @@ In `~/.local/share/pocketbook-kit`:
 
 | Path | What it is |
 |---|---|
-| `SDK-<sdk>/` | Toolchain, Qt6 and PocketBook libraries, e.g. `SDK-B288-6.10/`. Downloaded by `pb setup` from the [PocketBook-SDK releases](https://github.com/Sean-on-Git/PocketBook-SDK/releases/tag/6.10). |
+| `SDK-<sdk>/` | Toolchain, Qt6 and PocketBook libraries, e.g. `SDK-B288-6.10/`. Downloaded by `pb setup` from the [PocketBook-SDK releases](https://github.com/Sean-on-Git/PocketBook-SDK/releases). |
 | `downloads/` | The SDK archives. Safe to delete after `setup`. |
 | `device/` | Files from your own PocketBook, made by `pb device` |
 | `sdk` | The SDK chosen with `pb use` |
@@ -90,19 +93,24 @@ In `~/.local/share/pocketbook-kit`:
 ## Why a container?
 
 The SDK's prebuilt tools (qmake, the desktop Qt6 and `libinkview`) only work from the path
-`/BUILD/SDK-<sdk>`, e.g. `/BUILD/SDK-B288-6.10`. They are also linked against Debian 12
-libraries. `pb` mounts the SDK at that path inside a Debian 12 container, with the kit at
-`/kit`, the app at `/src` and its build folder at `/out`. That works on any distro, and the
-paths compiled into the binaries stay valid.
+they were built in: `/BUILD/SDK-<sdk>` for the 6.10 SDKs, e.g. `/BUILD/SDK-B288-6.10`, and
+`/BUILD/arm-buildroot-linux-gnueabihf_sdk-buildroot` for 6.11. They are also linked against
+one Debian release's libraries: Debian 12 for 6.10, Debian 13 for 6.11. `pb` mounts the SDK
+at that path inside a container of that release, with the kit at `/kit`, the app at `/src`
+and its build folder at `/out`. That works on any distro, and the paths compiled into the
+binaries stay valid.
 
 ## How the builds work
 
-- **PC build:** uses the desktop Qt6 in `SDK-<sdk>/usr/local/qt6`. `libinkview` draws a
+- **PC build:** uses the desktop Qt6 in the SDK's `local/qt6`. `libinkview` draws a
   simulated device screen in an X11 window. Right-click inside it to choose a different
   device model. The emulator reads and writes settings in `./system`, so each PC build
-  gets its own copy of `PocketBook-SDK/system`.
-- **ARM build:** uses the ARM Qt6 in the SDK sysroot and the
-  `arm-obreey-linux-gnueabi-clang++` cross-compiler.
+  gets its own copy of `PocketBook-SDK/system`. The 6.11 desktop Qt is built with OpenGL
+  ES, which the emulator can't provide, so `pb` runs apps with `QT_QUICK_BACKEND=software`,
+  as the 6.10 one draws anyway.
+- **ARM build:** uses the ARM Qt6 in the SDK sysroot and its clang cross-compiler
+  (`arm-obreey-linux-gnueabi` for 6.10, the Buildroot `arm-buildroot-linux-gnueabihf` for
+  6.11).
 - **Any app:** `main.cpp` calls `InitInkview()` and selects the `pocketbook2` Qt platform
   plugin. After that it's a normal QML app.
 
@@ -181,8 +189,12 @@ PB_SDK=B288-6.10 pb arm   # or pick one for a single command
 
 Each SDK is unpacked into its own `SDK-<sdk>/` folder, and builds go into
 `build/<app>/<sdk>/`, so builds from different SDKs don't overwrite each other. To add another
-SDK release, add its name, release tag and SHA-256 (shown on the GitHub release page) to the
-tables at the top of `pb.sh`.
+SDK, add its release tag, SHA-256 (shown on the GitHub release page), the folder at the top of
+its archive, where its usr tree is and its toolchain's name to the tables at the top of
+`pb.sh`. A new release also needs a `container/Containerfile.<release>` with the Debian
+release its tools were built on (the SDK's `PocketBook-SDK/docker/Dockerfile.<release>` says
+which) and the libraries they load (`ldd` on its `local/qt6/bin/qmake`, `local/lib/*.so` and
+`local/qt6/plugins/platforms/*.so` lists the missing ones).
 
 ## Credits
 

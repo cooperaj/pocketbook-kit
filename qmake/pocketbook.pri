@@ -1,7 +1,8 @@
 # Settings every PocketBook app needs, for both the emulator and the device. Include it
 # from the app's .pro file:
 #     include($$(PB_KIT)/qmake/pocketbook.pri)
-# pb.sh sets PB_KIT and the SDK's paths in the build container.
+# pb.sh sets PB_KIT and the SDK's paths in the build container: PB_SDK_USR is the SDK's usr
+# tree (local/ has the desktop Qt and libinkview) and PB_SYSROOT the device's sysroot.
 
 contains(PLATFORM, arm) {
     # Cross-compile for the device (armv7, Qt6 from the SDK sysroot)
@@ -13,12 +14,12 @@ contains(PLATFORM, arm) {
     CONFIG += link_pkgconfig
     PKGCONFIG += freetype2
     DEFINES += EMULATOR=1 PB_LOG_LEVEL=1
-    DEFINES += "EMULATOR_SDK_PATH=\\\"$$(PB_SDK_DIR)/usr/local\\\""
-    LIBS += -L$$(PB_SDK_DIR)/usr/lib -L$$(PB_SDK_DIR)/usr/local/lib
-    INCLUDEPATH += $$(PB_SDK_DIR)/usr/local/include $$(PB_SDK_DIR)/usr/include
-    QMAKE_RPATHDIR += $$(PB_SDK_DIR)/usr/local/lib
+    DEFINES += "EMULATOR_SDK_PATH=\\\"$$(PB_SDK_USR)/local\\\""
+    LIBS += -L$$(PB_SDK_USR)/lib -L$$(PB_SDK_USR)/local/lib
+    INCLUDEPATH += $$(PB_SDK_USR)/local/include $$(PB_SDK_USR)/include
+    QMAKE_RPATHDIR += $$(PB_SDK_USR)/local/lib
     message("$$TARGET: building for PC emulator, SDK $$(PB_SDK_DIR)")
-    system(echo [Paths] > $$OUT_PWD/qt.conf; echo Prefix = $$(PB_SDK_DIR)/usr/local/qt6 >> $$OUT_PWD/qt.conf)
+    system(echo [Paths] > $$OUT_PWD/qt.conf; echo Prefix = $$(PB_SDK_USR)/local/qt6 >> $$OUT_PWD/qt.conf)
 }
 
 LIBS += -ldl -lz -lhwconfig -linkview -lcommon_utilities

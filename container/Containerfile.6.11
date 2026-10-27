@@ -1,0 +1,28 @@
+# Minimal Debian Trixie build/run environment for the PocketBook 6.11 SDK (RK3566).
+# xvfb, xdotool and imagemagick are for pb test: a virtual display, input and screenshots.
+# The SDK's prebuilt host tools (qmake, moc, x86 Qt, libinkview) are linked
+# against Trixie libraries, so they must run inside this image. Its device toolchain
+# (clang 20, binutils) is its own; the desktop Qt builds with clang and ccache.
+FROM docker.io/library/debian:trixie
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential pkg-config file clang ccache \
+        curl ca-certificates libarchive-tools \
+        libfreetype-dev libfontconfig1 libboost-dev libjpeg62-turbo-dev \
+        libgtk2.0-0t64 libpangoxft-1.0-0 \
+        libssl3t64 libicu76 libjsoncpp26 libcurl4t64 libjpeg62-turbo libtiff6 libpng16-16t64 \
+        libglib2.0-0t64 libpcre2-16-0 libdouble-conversion3 libzstd1 libb2-1 \
+        libx11-6 libxkbcommon0 libegl1 libgl1 libopengl0 libdbus-1-3 \
+        libjson-c5 libtag2 libsqlite3-0 libsqlite3-dev libopencv-core410 libopencv-imgproc410 libgles2 \
+        libgles-dev libegl-dev \
+        libnss3 libnspr4 libopus0 libasound2t64 libevent-2.1-7t64 libharfbuzz-subset0 \
+        libpci3 libsnappy1v5 libwebpdemux2 libwebpmux3 \
+        fonts-liberation \
+        xvfb xdotool imagemagick \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -m 1777 /tmp/.X11-unix
+
+ENV LANG=C.UTF-8
+
+WORKDIR /BUILD
