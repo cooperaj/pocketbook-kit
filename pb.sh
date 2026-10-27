@@ -40,8 +40,9 @@ set -euo pipefail
 # SDKs from https://github.com/Sean-on-Git/PocketBook-SDK/releases: release tag and
 # SHA-256 of the archive (shown on the release page). B288 covers most devices from
 # Touch Lux 5 to InkPad X. B300 is listed for the InkPad Color 2, but the Era Color
-# (PB700K3) is also a B300 device: its hwconfig reports PLATFORM_B300. RK3566 is for the
-# 1030, the only device with firmware 6.11 so far.
+# (PB700K3) is also a B300 device: its hwconfig reports PLATFORM_B300. RK3566 is the only
+# 6.11 SDK published so far, for the 1030. Firmware 6.11 also reached B288 devices (Era,
+# Verse Pro, InkPad 4 and others, October 2026), but there is no B288 or B300 6.11 SDK.
 declare -A SDK_RELEASE=([B288-6.10]=6.10 [B300-6.10]=6.10 [RK3566-6.11]=6.11)
 declare -A SDK_SHA256=(
     [B288-6.10]=18405fb276535d53a4b70d2bbf4033313cded58da5002d563ccf7e1838440c0b
