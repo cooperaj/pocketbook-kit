@@ -10,8 +10,8 @@ only for the InkPad Color 2, but the Era Color (PB700K3) is a B300 device too. B
 on B300 devices, but the B300 SDK matches their firmware's libraries.
 
 Firmware **6.11** is supported with the **RK3566** SDK, for the 1030, the only device with
-6.11 so far. Its builds target that device's processor and won't run on 6.10 devices.
-To check your firmware, go to Settings → Software → Version on the device.
+6.11 that has an available SDK so far. Its builds target that device's processor and won't run
+on 6.10 devices. To check your firmware, go to Settings → Software → Version on the device.
 
 ## Requirements
 
