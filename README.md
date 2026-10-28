@@ -127,6 +127,9 @@ include($$(PB_KIT)/qmake/pocketbook.pri)
 To pass a build-time setting to qmake, set `PB_QMAKE_ARGS`, e.g.
 `PB_QMAKE_ARGS="SERVER=example.com" pb arm`.
 
+To set environment variables for the app in `pb run` and `pb test`, set `PB_ENV` to
+`NAME=value` pairs separated by spaces, e.g. `PB_ENV="MYAPP_DEBUG=1" pb run`.
+
 ## Making the emulator match your device
 
 The emulator uses the SDK's own theme, fonts and screen size, so it doesn't look exactly like

@@ -27,6 +27,9 @@
 # PB_QMAKE_ARGS adds arguments to qmake, e.g. for a build with an app's build-time
 # setting: PB_QMAKE_ARGS="SUGGESTED_SERVER=books.example.com" pb arm
 #
+# PB_ENV sets environment variables for the app in pb run and pb test, as NAME=value
+# pairs separated by spaces (values can't contain spaces): PB_ENV="MYAPP_DEBUG=1" pb run
+#
 # SDKs, the selected SDK and the device files are kept in PB_HOME, by default
 # ~/.local/share/pocketbook-kit, and shared by every app. The SDK is B288-6.10 unless
 # pb use picked another; PB_SDK=<sdk> overrides it for one command. Uses podman if
@@ -271,6 +274,9 @@ build_arm() {
 # QT_QUICK_BACKEND=software draws as the 6.10 one does, which has no OpenGL.
 APP_ENV=(env LD_LIBRARY_PATH=$SDK_USR_DIR/local/lib FONTCONFIG_FILE=/out/pc/system/fonts.conf
     QT_QUICK_BACKEND=software)
+# The app's own, from PB_ENV
+read -ra USER_ENV <<< "${PB_ENV:-}"
+APP_ENV+=("${USER_ENV[@]}")
 
 run_pc() {
     in_container /out/pc "${APP_ENV[@]}" "./$APP.app"
@@ -377,5 +383,5 @@ case "${1:-}" in
     sdks)   list_sdks ;;
     use)    use_sdk "${2:-}" ;;
     device) device "${@:2}" ;;
-    *)      sed -n '2,35p' "$0"; exit 1 ;;
+    *)      sed -n '2,40p' "$0"; exit 1 ;;
 esac
