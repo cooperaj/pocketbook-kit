@@ -7,7 +7,9 @@
 #   pb run   [app-dir]       build for PC and open it in the emulator window
 #   pb pc    [app-dir]       build for PC             -> build/<app>/<sdk>/pc/<app>.app
 #   pb arm   [app-dir]       cross-compile for device -> build/<app>/<sdk>/arm/<app>.app
-#   pb test  <app-dir> <script> [args]
+#   pb test  [app-dir]       build for PC, then build the app's tests/tests.pro and run its
+#                            tests (make check) on Qt's offscreen platform
+#   pb drive <app-dir> <script> [args]
 #                            build for PC, then run a bash script beside the emulator on a
 #                            virtual display (Xvfb): the script starts "$PB_APP" itself and
 #                            can drive it with xdotool and take screenshots with import;
@@ -27,7 +29,7 @@
 # PB_QMAKE_ARGS adds arguments to qmake, e.g. for a build with an app's build-time
 # setting: PB_QMAKE_ARGS="SUGGESTED_SERVER=books.example.com" pb arm
 #
-# PB_ENV sets environment variables for the app in pb run and pb test, as NAME=value
+# PB_ENV sets environment variables for the app in pb run, pb test and pb drive, as NAME=value
 # pairs separated by spaces (values can't contain spaces): PB_ENV="MYAPP_DEBUG=1" pb run
 #
 # SDKs, the selected SDK and the device files are kept in PB_HOME, by default
@@ -282,10 +284,22 @@ run_pc() {
     in_container /out/pc "${APP_ENV[@]}" "./$APP.app"
 }
 
-# test_pc <script> [args...]: runs the script in /out/pc with $PB_APP set
-test_pc() {
+# Builds tests/tests.pro in /out/tests and runs make check there. -k runs every test program
+# even after one fails, and the exit code says whether any did. Offscreen, so no test opens
+# a window; the virtual display is there in case one tries anyway.
+run_tests() {
+    [[ -f $APP_DIR/tests/tests.pro ]] || die "no tests/tests.pro in $APP_DIR (see Tests in the kit's README)"
+    mkdir -p "$OUT_DIR/tests"
+    HEADLESS=1 in_container /out/tests "${APP_ENV[@]}" QT_QPA_PLATFORM=offscreen bash -ec "
+        $SDK_USR_DIR/local/qt6/bin/qmake PLATFORM=linux ${PB_QMAKE_ARGS:-} /src/tests/tests.pro
+        make -j\$(nproc)
+        make -k check"
+}
+
+# drive_pc <script> [args...]: runs the script in /out/pc with $PB_APP set
+drive_pc() {
     local script
-    script=$(realpath "${1:-}") && [[ -f $script ]] || die "usage: pb test <app-dir> <script> [args]"
+    script=$(realpath "${1:-}") && [[ -f $script ]] || die "usage: pb drive <app-dir> <script> [args]"
     shift
     MOUNTS+=(-v "$(dirname "$script"):/test")
     HEADLESS=1 in_container /out/pc "${APP_ENV[@]}" PB_APP="./$APP.app" \
@@ -376,12 +390,13 @@ case "${1:-}" in
     pc)     resolve_app "${2:-}"; build_pc ;;
     run)    resolve_app "${2:-}"; build_pc; run_pc ;;
     arm)    resolve_app "${2:-}"; build_arm ;;
-    test)   resolve_app "${2:-}"; build_pc; test_pc "${@:3}" ;;
+    test)   resolve_app "${2:-}"; build_pc; run_tests ;;
+    drive)  resolve_app "${2:-}"; build_pc; drive_pc "${@:3}" ;;
     shell)  if [[ -n "${2:-}" ]]; then resolve_app "$2"; mkdir -p "$OUT_DIR"; in_container /src bash
             else in_container /kit bash; fi ;;
     clean)  resolve_app "${2:-}"; rm -rf "${BUILD_ROOT:?}/${APP:?}" ;;
     sdks)   list_sdks ;;
     use)    use_sdk "${2:-}" ;;
     device) device "${@:2}" ;;
-    *)      sed -n '2,40p' "$0"; exit 1 ;;
+    *)      sed -n '2,/^set /{/^#/p}' "$0"; exit 1 ;;
 esac

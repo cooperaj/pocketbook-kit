@@ -1,5 +1,5 @@
 # Minimal Debian Trixie build/run environment for the PocketBook 6.11 SDK (RK3566).
-# xvfb, xdotool and imagemagick are for pb test: a virtual display, input and screenshots.
+# xvfb, xdotool and imagemagick are for pb drive: a virtual display, input and screenshots.
 # The SDK's prebuilt host tools (qmake, moc, x86 Qt, libinkview) are linked
 # against Trixie libraries, so they must run inside this image. Its device toolchain
 # (clang 20, binutils) is its own; the desktop Qt builds with clang and ccache.

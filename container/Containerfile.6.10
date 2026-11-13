@@ -1,5 +1,5 @@
 # Minimal Debian Bookworm build/run environment for the PocketBook 6.10 SDKs.
-# xvfb, xdotool and imagemagick are for pb test: a virtual display, input and screenshots.
+# xvfb, xdotool and imagemagick are for pb drive: a virtual display, input and screenshots.
 # The SDK's prebuilt host tools (qmake, moc, x86 Qt, libinkview) are linked
 # against Bookworm libraries, so they must run inside this image.
 FROM docker.io/library/debian:bookworm

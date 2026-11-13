@@ -127,7 +127,7 @@ include($$(PB_KIT)/qmake/pocketbook.pri)
 To pass a build-time setting to qmake, set `PB_QMAKE_ARGS`, e.g.
 `PB_QMAKE_ARGS="SERVER=example.com" pb arm`.
 
-To set environment variables for the app in `pb run` and `pb test`, set `PB_ENV` to
+To set environment variables for the app in `pb run`, `pb test` and `pb drive`, set `PB_ENV` to
 `NAME=value` pairs separated by spaces, e.g. `PB_ENV="MYAPP_DEBUG=1" pb run`.
 
 ## Making the emulator match your device
@@ -151,10 +151,53 @@ device-export copies only configuration, themes and fonts, never the firmware's 
 The files are PocketBook's own, so keep them out of your app's repo. `pb device` shows which
 device the files came from, and `pb device remove` goes back to the SDK's emulator.
 
-## Testing without a window
+## Tests
 
-`pb test <app-dir> <script>` builds the app for PC and runs a bash script in the container
-on a virtual display, so tests don't take over your screen. The script starts the app
+`pb test [app-dir]` builds the app for PC, then builds the qmake project in the app's
+`tests/tests.pro` and runs `make check` in it, on Qt's offscreen platform. It prints each
+test's result and exits non-zero if any failed. `tests/tests.pro` is usually a `subdirs`
+project with one test program per folder, each with `CONFIG += testcase` (Qt Test) or
+`CONFIG += qmltestcase` (Qt Quick Test, which runs every `tst_*.qml` in its folder). The SDK's
+desktop Qt has both.
+
+The tests build in `build/<app>/<sdk>/tests`, with the app's folder at `/src`, so a test
+project can use the app's own files, e.g. `INCLUDEPATH += $$PWD/../src` or a `.pri` listing
+its sources. Include the kit's `pocketbook.pri` in a test that links code calling inkview. The
+tests don't call `InitInkview()`, and on PC inkview's storage paths (`FLASHDIR`,
+`CONFIGPATH`) are relative to the working directory.
+
+A minimal Qt Test program:
+
+```qmake
+# tests/tests.pro
+TEMPLATE = subdirs
+SUBDIRS = unit
+
+# tests/unit/unit.pro
+CONFIG += testcase c++17
+QT += testlib
+SOURCES += tst_unit.cpp
+```
+
+```cpp
+// tests/unit/tst_unit.cpp
+#include <QTest>
+
+class TestUnit : public QObject
+{
+    Q_OBJECT
+private slots:
+    void adds() { QCOMPARE(1 + 1, 2); }
+};
+
+QTEST_GUILESS_MAIN(TestUnit)
+#include "tst_unit.moc"
+```
+
+## Driving the app on a virtual display
+
+`pb drive <app-dir> <script>` builds the app for PC and runs a bash script in the container
+on a virtual display, so it doesn't take over your screen. The script starts the app
 itself, drives it with `xdotool` and takes screenshots with ImageMagick's `import`. The
 script's folder is mounted at `/test`, so it can save them there:
 

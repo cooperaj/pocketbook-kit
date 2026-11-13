@@ -3,7 +3,7 @@
 PB_KIT ?= kit
 PB := $(if $(wildcard $(PB_KIT)/pb.sh),$(PB_KIT)/pb.sh,pb)
 
-.PHONY: setup run pc arm shell clean
+.PHONY: setup run pc arm test shell clean
 
 # Fetch the kit (if it's a submodule), its SDK and the container image
 setup:
@@ -21,6 +21,10 @@ pc:
 # Build for the device: copy build/<app>/<sdk>/arm/<app>.app to its applications/ folder
 arm:
 	$(PB) arm .
+
+# Build and run the tests in tests/tests.pro
+test:
+	$(PB) test .
 
 # Shell in the build container
 shell:
