@@ -29,6 +29,9 @@
 # PB_QMAKE_ARGS adds arguments to qmake, e.g. for a build with an app's build-time
 # setting: PB_QMAKE_ARGS="SUGGESTED_SERVER=books.example.com" pb arm
 #
+# PB_APP_VERSION sets the app's version (pb_build.h's PB_APP_VERSION) instead of git
+# describe, e.g. to try an app's updates with a build that seems older: PB_APP_VERSION=0.9.0
+#
 # PB_ENV sets environment variables for the app in pb run, pb test and pb drive, as NAME=value
 # pairs separated by spaces (values can't contain spaces): PB_ENV="MYAPP_DEBUG=1" pb run
 #
@@ -230,7 +233,7 @@ resolve_app() {
     APP_DIR=$dir
     APP=$(basename "${pros[0]}" .pro)
     # The container has no git, so the version comes from here
-    APP_VERSION=$(git -C "$dir" describe --tags --always --dirty 2>/dev/null || true)
+    APP_VERSION=${PB_APP_VERSION:-$(git -C "$dir" describe --tags --always --dirty 2>/dev/null || true)}
     OUT_DIR=$BUILD_ROOT/$APP/$PB_SDK
     MOUNTS=(-v "$APP_DIR:/src" -v "$OUT_DIR:/out")
 }
