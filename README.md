@@ -127,6 +127,11 @@ include($$(PB_KIT)/qmake/pocketbook.pri)
 To pass a build-time setting to qmake, set `PB_QMAKE_ARGS`, e.g.
 `PB_QMAKE_ARGS="SERVER=example.com" pb arm`.
 
+Every build writes `pb_build.h` to its build folder, for the app to include. `PB_SDK` is the
+SDK it was built with (`"B288-6.10"`), and `PB_APP_VERSION` is `git describe --tags --always
+--dirty` of the app's repo (`"1.2.0"`, or `"1.2.0-3-gabc1234"` three commits after that tag),
+empty outside git.
+
 To set environment variables for the app in `pb run`, `pb test` and `pb drive`, set `PB_ENV` to
 `NAME=value` pairs separated by spaces, e.g. `PB_ENV="MYAPP_DEBUG=1" pb run`.
 

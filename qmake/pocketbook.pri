@@ -23,3 +23,11 @@ contains(PLATFORM, arm) {
 }
 
 LIBS += -ldl -lz -lhwconfig -linkview -lcommon_utilities
+
+# pb_build.h: PB_SDK, the SDK built with (e.g. "B288-6.10"), and PB_APP_VERSION, git describe
+# --tags of the app's repo (e.g. "1.2.0", or "1.2.0-3-gabc1234-dirty" between tags; empty
+# outside git). Written only when they change, so a new version recompiles only what
+# includes it.
+PB_BUILD_HEADER = $$OUT_PWD/pb_build.h
+PB_BUILD_DEFINES = "$${LITERAL_HASH}define PB_SDK \"$$(PB_SDK)\"$$escape_expand(\\n)$${LITERAL_HASH}define PB_APP_VERSION \"$$(PB_APP_VERSION)\""
+!equals(PB_BUILD_DEFINES, $$cat($$PB_BUILD_HEADER, blob)): write_file($$PB_BUILD_HEADER, PB_BUILD_DEFINES)

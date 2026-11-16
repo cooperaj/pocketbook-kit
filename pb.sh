@@ -153,6 +153,8 @@ in_container() {
         -v "$KIT_DIR:/kit" -v "$DEVICE_DIR:/device" "${sdk_mount[@]}" "${MOUNTS[@]}" \
         -w "$workdir" "${x11[@]}" \
         -e PB_KIT=/kit \
+        -e PB_SDK=$PB_SDK \
+        -e PB_APP_VERSION="${APP_VERSION:-}" \
         -e PB_SDK_DIR=$SDK \
         -e PB_SDK_USR=$SDK_USR_DIR \
         -e PB_SDK_CFG=$SDK/config.cmake \
@@ -218,7 +220,7 @@ use_sdk() {
     echo "Using $sdk$([[ -d "$PB_HOME/SDK-$sdk${SDK_USR[$sdk]}/local" ]] || echo '; run pb setup to download it')"
 }
 
-# Sets APP_DIR (absolute), APP (target name) and OUT_DIR (build/<app>/<sdk>), and
+# Sets APP_DIR (absolute), APP (target name), APP_VERSION and OUT_DIR (build/<app>/<sdk>), and
 # mounts them at /src and /out
 resolve_app() {
     local dir
@@ -227,6 +229,8 @@ resolve_app() {
     [[ ${#pros[@]} -eq 1 && -f ${pros[0]} ]] || die "$dir must contain exactly one .pro file"
     APP_DIR=$dir
     APP=$(basename "${pros[0]}" .pro)
+    # The container has no git, so the version comes from here
+    APP_VERSION=$(git -C "$dir" describe --tags --always --dirty 2>/dev/null || true)
     OUT_DIR=$BUILD_ROOT/$APP/$PB_SDK
     MOUNTS=(-v "$APP_DIR:/src" -v "$OUT_DIR:/out")
 }
